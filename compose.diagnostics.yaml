@@ -1,0 +1,6 @@
+services:
+  nahan:
+    environment:
+      NAHAN_DIAGNOSTICS_SOCKET: /tmp/nahan-profile.sock
+    volumes:
+      - /opt/nahan-docker/diagnostics/NahaN:/usr/local/bin/NahaN:ro

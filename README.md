@@ -1,0 +1,93 @@
+# NahaN Core
+
+[راهنمای فارسی](README.fa.md)
+
+An open-source Linux node runtime for the NahaN control plane, built on Xray.
+
+**Developer:** NahaN  
+**Contact:** nahancode@gmail.com  
+**License:** GPL-3.0. See [LICENSE](LICENSE).
+
+## Status and capabilities
+
+Experimental software: stage and verify before replacing a production core.
+The separate NahaN panel is not included in this repository.
+
+- Authenticated TLS control plane, managed manifests and apply receipts.
+- Managed VLESS, VMess, Trojan and infrastructure Shadowsocks profiles.
+- Core-local secret references, profile preflight and durable traffic reports.
+- Live connection-policy updates for new connections while preserving existing
+  sessions. Manifest changes can restart the engine.
+- Temporary SS tests: independent key and port, one-hour expiry, active-session
+  revocation, 10 Mbps/three-IP limits and encrypted browser delivery.
+
+Not all engine protocols have managed adapters. General customer migration,
+GRE management, automatic binary upgrades, imported-certificate renewal and
+complete production provisioning remain incomplete. Engine restarts revoke
+temporary tests. Example IPs/URLs are placeholders, not working demo servers.
+
+## Build and documentation
+
+Use the Go version in `go.mod` (Go 1.26 or newer) and the pinned patch tool:
+
+```sh
+git clone https://github.com/NahaNCode/nahan-core.git
+cd nahan-core
+MODFILE=$(go run ./tools/xray-patch)
+go test -p 1 -modfile="$MODFILE" ./utility/entryprofile ./utility/controlplane ./api/nahan ./service/controller ./manager
+CGO_ENABLED=0 go build -modfile="$MODFILE" -trimpath -ldflags="-s -w" -o NahaN .
+```
+
+Do not use raw `go install ...@latest`: builds require the repository's Xray
+patches. The patch tool uses a temporary dependency copy, not the global cache.
+
+- [Installation and managed configuration](docs/INSTALLATION.md)
+- [Managed control-plane protocol](docs/MANAGED-LAB.md)
+- [Advanced profiles](docs/advanced-entry-runtime.md)
+- [Connection policies](docs/connection-policy.md)
+- [Traffic outbox](docs/TRAFFIC-OUTBOX.md)
+- [Contributing](CONTRIBUTING.md) and [security reports](SECURITY.md)
+
+## Connect using the NahaN panel package
+
+1. In the NahaN panel's core-management page, add a core with a name and host.
+2. Select **Issue installation package**. The current wizard registers a LAB
+   core and displays the installation-package screen.
+3. Download **config.json** and **core.key** from that screen. The key is
+   presented at issuance: keep it private and do not commit either file.
+4. Place both files together in a dedicated runtime directory on the core host.
+   Preserve the panel-issued configuration; do not replace it with a legacy
+   per-node configuration or guess the control-plane address.
+5. Run the built NahaN binary from that directory:
+
+```sh
+cd /opt/nahan/runtime
+chmod 600 config.json core.key
+/opt/nahan/NahaN -c ./config.json
+```
+
+6. Use **Check core report** in the panel and verify a fresh heartbeat.
+7. Create an inbound in NahaN, check its profile, publish it, and require the
+   core's apply receipt. Client connectivity must then be tested separately.
+
+The exported package already includes `ControlPlane.ApiHost`, `CoreID`,
+`KeyFile` and, when used by the panel deployment, `ServerName`. Keep these
+issued values together: an IP endpoint and its TLS server name are not
+interchangeable. The default exported key path is `./core.key`, resolved from
+the process working directory.
+
+Inbound IDs are assigned by the panel and discovered by the runtime; no manual
+`NodeID` or per-inbound API key is entered in this package. A connected core
+alone does not imply that any inbound has been published.
+
+The NahaN panel is a separate application, not included here. The current
+wizard supplies connection files; it does not install the binary remotely.
+See [installation](docs/INSTALLATION.md) for the service wrapper.
+`examples/managed.json` explains the field shape for development only; it is
+not a replacement for the package issued by your panel.
+
+## Docker deployment
+
+Follow [managed installation](docs/INSTALLATION.md#docker) for the same
+CoreID/key-file configuration inside a container. This repository does not
+provide deployment-topology or tunnel-configuration tutorials.

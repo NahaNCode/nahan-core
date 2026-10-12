@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package nahan.app.xdispatcher;
+option csharp_namespace = "NahaN.App.Myispatcher";
+option go_package = "github.com/NahaNCode/nahan-core/app/xdispatcher";
+option java_package = "com.nahan.app.xdispatcher";
+option java_multiple_files = true;
+
+message SessionConfig {
+  reserved 1;
+}
+
+message Config {
+  SessionConfig settings = 1;
+}

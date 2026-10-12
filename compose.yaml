@@ -1,0 +1,26 @@
+services:
+  nahan:
+    image: ${NAHAN_IMAGE:-ghcr.io/nahancode/nahan-core:latest}
+    build:
+      context: .
+    container_name: nahan
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./runtime:/etc/NahaN
+    logging:
+      driver: local
+      options:
+        max-size: 20m
+        max-file: "5"

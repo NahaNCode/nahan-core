@@ -1,0 +1,2314 @@
+{
+  "definitions": {
+    "Bandwidth": {
+      "kind": "string"
+    },
+    "CustomSockoptConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "system",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "network",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "opt",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "type",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "DokodemoConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "allowedNetwork",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "rewriteAddress",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "rewritePort",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "network",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "address",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "port",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "portMap",
+          "schema": {
+            "kind": "map",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "followRedirect",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "userLevel",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "FinalMask": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "tcp",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "Mask"
+            }
+          }
+        },
+        {
+          "name": "udp",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "Mask"
+            }
+          }
+        },
+        {
+          "name": "quicParams",
+          "schema": {
+            "kind": "ref",
+            "ref": "QuicParamsConfig"
+          }
+        }
+      ]
+    },
+    "GRPCConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "authority",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "serviceName",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "multiMode",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "idle_timeout",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "health_check_timeout",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "permit_without_stream",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "initial_windows_size",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "user_agent",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "HTTPAccount": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "user",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "pass",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "HTTPServerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "HTTPAccount"
+            }
+          }
+        },
+        {
+          "name": "accounts",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "HTTPAccount"
+            }
+          }
+        },
+        {
+          "name": "allowTransparent",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "userLevel",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "HappyEyeballsConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "prioritizeIPv6",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "tryDelayMs",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "interleave",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "maxConcurrentTry",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "HttpUpgradeConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "host",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "path",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "headers",
+          "schema": {
+            "kind": "map",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "acceptProxyProtocol",
+          "schema": {
+            "kind": "boolean"
+          }
+        }
+      ]
+    },
+    "HysteriaConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "version",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "auth",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "congestion",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "up",
+          "schema": {
+            "kind": "ref",
+            "ref": "Bandwidth"
+          }
+        },
+        {
+          "name": "down",
+          "schema": {
+            "kind": "ref",
+            "ref": "Bandwidth"
+          }
+        },
+        {
+          "name": "udphop",
+          "schema": {
+            "kind": "ref",
+            "ref": "UdpHop"
+          }
+        },
+        {
+          "name": "udpIdleTimeout",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "masquerade",
+          "schema": {
+            "kind": "ref",
+            "ref": "Masquerade"
+          }
+        }
+      ]
+    },
+    "HysteriaServerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "version",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "HysteriaUserConfig"
+            }
+          }
+        },
+        {
+          "name": "clients",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "HysteriaUserConfig"
+            }
+          }
+        }
+      ]
+    },
+    "HysteriaUserConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "auth",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "email",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "InboundDetourConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "protocol",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "port",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "listen",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "settings",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "tag",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "streamSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "StreamConfig"
+          }
+        },
+        {
+          "name": "sniffing",
+          "schema": {
+            "kind": "ref",
+            "ref": "SniffingConfig"
+          }
+        }
+      ]
+    },
+    "KCPConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "mtu",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "tti",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "uplinkCapacity",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "downlinkCapacity",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "cwndMultiplier",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "maxSendingWindow",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "header",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "seed",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "LimitFallback": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "afterBytes",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "bytesPerSec",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "burstBytesPerSec",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "Mask": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "type",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "settings",
+          "schema": {
+            "kind": "json"
+          }
+        }
+      ]
+    },
+    "Masquerade": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "type",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "dir",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "url",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "rewriteHost",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "insecure",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "content",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "headers",
+          "schema": {
+            "kind": "map",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "statusCode",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "QuicParamsConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "congestion",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "debug",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "bbrProfile",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "brutalUp",
+          "schema": {
+            "kind": "ref",
+            "ref": "Bandwidth"
+          }
+        },
+        {
+          "name": "brutalDown",
+          "schema": {
+            "kind": "ref",
+            "ref": "Bandwidth"
+          }
+        },
+        {
+          "name": "udpHop",
+          "schema": {
+            "kind": "ref",
+            "ref": "UdpHop"
+          }
+        },
+        {
+          "name": "initStreamReceiveWindow",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "maxStreamReceiveWindow",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "initConnectionReceiveWindow",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "maxConnectionReceiveWindow",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "maxIdleTimeout",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "keepAlivePeriod",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "disablePathMTUDiscovery",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "maxIncomingStreams",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "REALITYConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "masterKeyLog",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "show",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "target",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "dest",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "type",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "xver",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "serverNames",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "privateKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "minClientVer",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "maxClientVer",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "maxTimeDiff",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "shortIds",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "mldsa65Seed",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "limitFallbackUpload",
+          "schema": {
+            "kind": "ref",
+            "ref": "LimitFallback"
+          }
+        },
+        {
+          "name": "limitFallbackDownload",
+          "schema": {
+            "kind": "ref",
+            "ref": "LimitFallback"
+          }
+        },
+        {
+          "name": "fingerprint",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "serverName",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "password",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "publicKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "shortId",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "mldsa65Verify",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "spiderX",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "ShadowsocksServerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "method",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "password",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "ref",
+            "ref": "byte"
+          }
+        },
+        {
+          "name": "email",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "ShadowsocksUserConfig"
+            }
+          }
+        },
+        {
+          "name": "clients",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "ShadowsocksUserConfig"
+            }
+          }
+        },
+        {
+          "name": "network",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ShadowsocksUserConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "method",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "password",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "ref",
+            "ref": "byte"
+          }
+        },
+        {
+          "name": "email",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "address",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "port",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "SniffingConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "enabled",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "destOverride",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "domainsExcluded",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "ipsExcluded",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "metadataOnly",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "routeOnly",
+          "schema": {
+            "kind": "boolean"
+          }
+        }
+      ]
+    },
+    "SocketConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "mark",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "tcpFastOpen",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "tproxy",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "acceptProxyProtocol",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "domainStrategy",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "dialerProxy",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "tcpKeepAliveInterval",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "tcpKeepAliveIdle",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "tcpCongestion",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "tcpWindowClamp",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "tcpMaxSeg",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "penetrate",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "tcpUserTimeout",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "v6only",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "interface",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "tcpMptcp",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "customSockopt",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "CustomSockoptConfig"
+            }
+          }
+        },
+        {
+          "name": "addressPortStrategy",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "happyEyeballs",
+          "schema": {
+            "kind": "ref",
+            "ref": "HappyEyeballsConfig"
+          }
+        },
+        {
+          "name": "trustedXForwardedFor",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        }
+      ]
+    },
+    "SocksAccount": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "user",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "pass",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "SocksServerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "auth",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "SocksAccount"
+            }
+          }
+        },
+        {
+          "name": "accounts",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "SocksAccount"
+            }
+          }
+        },
+        {
+          "name": "udp",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "ip",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "userLevel",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "SplitHTTPConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "host",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "path",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "mode",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "headers",
+          "schema": {
+            "kind": "map",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "xPaddingBytes",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "xPaddingObfsMode",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "xPaddingKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "xPaddingHeader",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "xPaddingPlacement",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "xPaddingMethod",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "uplinkHTTPMethod",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sessionIDPlacement",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sessionIDKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sessionIDTable",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sessionIDLength",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "seqPlacement",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "seqKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "uplinkDataPlacement",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "uplinkDataKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "uplinkChunkSize",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "noGRPCHeader",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "noSSEHeader",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "scMaxEachPostBytes",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "scMinPostsIntervalMs",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "scMaxBufferedPosts",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "scStreamUpServerSecs",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "serverMaxHeaderBytes",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "xmux",
+          "schema": {
+            "kind": "ref",
+            "ref": "XmuxConfig"
+          }
+        },
+        {
+          "name": "downloadSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "StreamConfig"
+          }
+        },
+        {
+          "name": "extra",
+          "schema": {
+            "kind": "json"
+          }
+        }
+      ]
+    },
+    "StreamConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "address",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "port",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "method",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "network",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "security",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "finalmask",
+          "schema": {
+            "kind": "ref",
+            "ref": "FinalMask"
+          }
+        },
+        {
+          "name": "tlsSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "TLSConfig"
+          }
+        },
+        {
+          "name": "realitySettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "REALITYConfig"
+          }
+        },
+        {
+          "name": "rawSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "TCPConfig"
+          }
+        },
+        {
+          "name": "tcpSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "TCPConfig"
+          }
+        },
+        {
+          "name": "xhttpSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "SplitHTTPConfig"
+          }
+        },
+        {
+          "name": "splithttpSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "SplitHTTPConfig"
+          }
+        },
+        {
+          "name": "kcpSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "KCPConfig"
+          }
+        },
+        {
+          "name": "grpcSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "GRPCConfig"
+          }
+        },
+        {
+          "name": "wsSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "WebSocketConfig"
+          }
+        },
+        {
+          "name": "httpupgradeSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "HttpUpgradeConfig"
+          }
+        },
+        {
+          "name": "hysteriaSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "HysteriaConfig"
+          }
+        },
+        {
+          "name": "sockopt",
+          "schema": {
+            "kind": "ref",
+            "ref": "SocketConfig"
+          }
+        }
+      ]
+    },
+    "TCPConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "header",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "acceptProxyProtocol",
+          "schema": {
+            "kind": "boolean"
+          }
+        }
+      ]
+    },
+    "TLSCertConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "certificateFile",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "certificate",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "keyFile",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "key",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "usage",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "ocspStapling",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "oneTimeLoading",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "buildChain",
+          "schema": {
+            "kind": "boolean"
+          }
+        }
+      ]
+    },
+    "TLSConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "allowInsecure",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "certificates",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "TLSCertConfig"
+            }
+          }
+        },
+        {
+          "name": "serverName",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "alpn",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "enableSessionResumption",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "disableSystemRoot",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "minVersion",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "maxVersion",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "cipherSuites",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "fingerprint",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "rejectUnknownSni",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "curvePreferences",
+          "schema": {
+            "kind": "string-list",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "masterKeyLog",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "pinnedPeerCertSha256",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "verifyPeerCertByName",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "echServerKeys",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "echConfigList",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "echSockopt",
+          "schema": {
+            "kind": "ref",
+            "ref": "SocketConfig"
+          }
+        }
+      ]
+    },
+    "TrojanInboundFallback": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "name",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "alpn",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "path",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "type",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "dest",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "xver",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "TrojanServerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "TrojanUserConfig"
+            }
+          }
+        },
+        {
+          "name": "clients",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "TrojanUserConfig"
+            }
+          }
+        },
+        {
+          "name": "fallbacks",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "TrojanInboundFallback"
+            }
+          }
+        }
+      ]
+    },
+    "TrojanUserConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "password",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "ref",
+            "ref": "byte"
+          }
+        },
+        {
+          "name": "email",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "flow",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "TunConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "name",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "desc",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "mtu",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "gateway",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "dns",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "userLevel",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "autoSystemRoutingTable",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "autoOutboundsInterface",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "UdpHop": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "ports",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "interval",
+          "schema": {
+            "kind": "range"
+          }
+        }
+      ]
+    },
+    "VLessInboundConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "json"
+            }
+          }
+        },
+        {
+          "name": "clients",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "json"
+            }
+          }
+        },
+        {
+          "name": "decryption",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "fallbacks",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "VLessInboundFallback"
+            }
+          }
+        },
+        {
+          "name": "flow",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "testseed",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "number",
+              "integer": true
+            }
+          }
+        }
+      ]
+    },
+    "VLessInboundFallback": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "name",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "alpn",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "path",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "type",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "dest",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "xver",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "VMessDefaultConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "level",
+          "schema": {
+            "kind": "ref",
+            "ref": "byte"
+          }
+        }
+      ]
+    },
+    "VMessInboundConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "json"
+            }
+          }
+        },
+        {
+          "name": "clients",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "json"
+            }
+          }
+        },
+        {
+          "name": "default",
+          "schema": {
+            "kind": "ref",
+            "ref": "VMessDefaultConfig"
+          }
+        }
+      ]
+    },
+    "WebSocketConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "host",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "path",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "headers",
+          "schema": {
+            "kind": "map",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "acceptProxyProtocol",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "heartbeatPeriod",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "WireGuardConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "IsClient",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "noKernelTun",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "secretKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "address",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "peers",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "WireGuardPeerConfig"
+            }
+          }
+        },
+        {
+          "name": "mtu",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "reserved",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "byte"
+            }
+          }
+        },
+        {
+          "name": "domainStrategy",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "WireGuardPeerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "publicKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "preSharedKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "endpoint",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "keepAlive",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "allowedIPs",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "email",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "XmuxConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "maxConcurrency",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "maxConnections",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "cMaxReuseTimes",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "hMaxRequestTimes",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "hMaxReusableSecs",
+          "schema": {
+            "kind": "range"
+          }
+        },
+        {
+          "name": "hKeepAlivePeriod",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    }
+  },
+  "protocols": {
+    "dokodemo-door": "DokodemoConfig",
+    "http": "HTTPServerConfig",
+    "hysteria": "HysteriaServerConfig",
+    "mixed": "SocksServerConfig",
+    "shadowsocks": "ShadowsocksServerConfig",
+    "socks": "SocksServerConfig",
+    "trojan": "TrojanServerConfig",
+    "tun": "TunConfig",
+    "tunnel": "DokodemoConfig",
+    "vless": "VLessInboundConfig",
+    "vmess": "VMessInboundConfig",
+    "wireguard": "WireGuardConfig"
+  },
+  "sourceDigest": "77ee3c68e66ec70106268765f7fc87c00b024964f3265ac2ac5a1faf93c25554",
+  "version": "26.7.28"
+}
