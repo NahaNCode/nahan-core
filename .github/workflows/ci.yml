@@ -1,0 +1,23 @@
+name: Core checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test pinned runtime and build
+        env:
+          CGO_ENABLED: 0
+        run: |
+          MODFILE=$(go run ./tools/xray-patch)
+          go test -p 2 -modfile="$MODFILE" ./utility/entryprofile ./utility/controlplane ./api/nahan ./service/controller ./manager ./cmd ./app/xdispatcher ./internal/regression
+          go build -modfile="$MODFILE" -trimpath -ldflags="-s -w" -o /tmp/NahaN .

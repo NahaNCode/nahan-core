@@ -1,0 +1,9 @@
+.git
+.github
+.vscode
+**/*.test
+NahaN
+NahaN-*
+*.log
+coverage.out
+tmp/

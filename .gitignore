@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+runtime/
+NahaN
+build_assets/
+*.key
+*.pem
+.env
+.env.*
