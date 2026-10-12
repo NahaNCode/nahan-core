@@ -29,6 +29,23 @@ func generate() error {
 	if module.Version != "v1.260327.1-0.20260728075948-5ca6f4b7d4dc" {
 		return fmt.Errorf("review lifecycle fixes for new Xray version %s", module.Version)
 	}
+	if module.Dir == "" {
+		download, err := exec.Command("go", "mod", "download", "-json", "github.com/xtls/xray-core@"+module.Version).Output()
+		if err != nil {
+			return fmt.Errorf("download pinned Xray: %w", err)
+		}
+		var fetched struct {
+			Dir   string
+			Error string
+		}
+		if err = json.Unmarshal(download, &fetched); err != nil {
+			return err
+		}
+		if fetched.Dir == "" || fetched.Error != "" {
+			return fmt.Errorf("pinned Xray source unavailable")
+		}
+		module.Dir = fetched.Dir
+	}
 	dir, err := os.MkdirTemp("", "nahan-xray-patch-")
 	if err != nil {
 		return err
