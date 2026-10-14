@@ -27,6 +27,7 @@ import (
 // Manager Structure
 type Manager struct {
 	egress            egressRuntime
+	exitEgress        egressRuntime
 	principals        map[string]*principalLease
 	principalInstalls int
 	retiredPrincipals map[string]int64
@@ -186,6 +187,11 @@ func (m *Manager) Start() {
 		server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.RestrictLease(m.managerConfig.EgressExpiresAt)
 	}
 	// Load Nodes config
+	if m.managerConfig.RestoredExitRoutes != nil {
+		if err := server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).ExitRoutes.Reserve(*m.managerConfig.RestoredExitRoutes); err != nil {
+			log.Panic("destination exit restore rejected")
+		}
+	}
 	for _, nodeConfig := range m.managerConfig.NodesConfig {
 		var apiClient api.API
 		apiClient = nodeConfig.PreparedAPI
@@ -212,6 +218,12 @@ func (m *Manager) Start() {
 		if err != nil {
 			log.Panicf("NahaN fialed to start: %s", err)
 		}
+	}
+	if m.managerConfig.RestoredExitRoutes != nil {
+		if err := m.ApplyExitRoutes(*m.managerConfig.RestoredExitRoutes); err != nil {
+			log.Print("Destination exit restoration remains blocked")
+		}
+		m.RestrictExitRoutes(m.managerConfig.ExitRoutesExpiresAt)
 	}
 	m.Running = true
 	return
