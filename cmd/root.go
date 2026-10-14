@@ -26,6 +26,7 @@ import (
 	"github.com/NahaNCode/nahan-core/service/controller"
 	"github.com/NahaNCode/nahan-core/utility/controlplane"
 	"github.com/NahaNCode/nahan-core/utility/entryprofile"
+	"github.com/NahaNCode/nahan-core/utility/routingpolicy"
 )
 
 var (
@@ -111,6 +112,27 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		policy, policyErr := routingpolicy.New(routingpolicy.Config{CoreID: panel.Config.CoreID, Key: panel.Key, Directory: filepath.Dir(panel.Config.KeyFile), RoutePath: managerConfig.RouteConfigPath, DNSPath: managerConfig.DnsConfigPath, InboundPath: managerConfig.InboundConfigPath, OutboundPath: managerConfig.OutboundConfigPath, LegacyAllowed: panel.Config.AllowManagedEgress})
+		if policyErr != nil {
+			return policyErr
+		}
+		panel.RoutingPolicyReport = func() any { return policy.Inspect() }
+		panel.RoutingPolicyApply = func(input json.RawMessage, jobID string) (any, error) {
+			report, err := applyRoutingPolicy(policy, m, managerConfig, input, jobID)
+			if panel.RoutingPolicyRefresh != nil {
+				panel.RoutingPolicyRefresh()
+			}
+			return report, err
+		}
+		panel.RoutingPolicyRefresh = func() {
+			report := policy.Inspect()
+			panel.Config.HasCustomRouting = !report.Enabled
+			if !report.Enabled {
+				managerConfig.EgressExpiresAt = time.Now().Add(-time.Second)
+				m.RestrictManagedEgress(managerConfig.EgressExpiresAt)
+			}
+		}
+		panel.RoutingPolicyRefresh()
 		panel.SSTrial = m.SSTrial
 		managerConfig.PrincipalStore = manager.NewPrincipalStore(filepath.Join(filepath.Dir(panel.Config.KeyFile), "egress-destination-principals"), panel.Config.CoreID, panel.Key)
 		panel.PrincipalDurable = true
@@ -124,6 +146,7 @@ func run() error {
 		if err = restoreEgress(panel, managerConfig); err != nil {
 			return fmt.Errorf("egress state restore failed")
 		}
+		panel.RoutingPolicyRefresh()
 		managerConfig.ConnectionPolicy, err = restorePolicy(panel)
 		if err != nil {
 			return fmt.Errorf("connection policy restore failed")

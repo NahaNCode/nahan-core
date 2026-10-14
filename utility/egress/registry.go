@@ -173,6 +173,13 @@ func (r *Registry) Revision() int64 {
 	return r.revision
 }
 
+// Expired bindings also require explicit withdrawal before consent is revoked.
+func (r *Registry) HasBindings() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.bindings) > 0
+}
+
 // Restart restoration may shorten, but must never renew, an authorization lease.
 func (r *Registry) RestrictLease(until time.Time) {
 	r.mu.Lock()

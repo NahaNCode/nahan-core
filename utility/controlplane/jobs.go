@@ -15,6 +15,9 @@ func (c *Client) SecretDirectory() string {
 	return filepath.Join(filepath.Dir(c.Config.KeyFile), "entry-secrets")
 }
 func (c *Client) ProcessJobs(ctx context.Context) error {
+	if c.RoutingPolicyRefresh != nil {
+		c.RoutingPolicyRefresh()
+	}
 	var jobs []struct {
 		ID      string          `json:"id"`
 		Kind    string          `json:"kind"`
@@ -25,7 +28,20 @@ func (c *Client) ProcessJobs(ctx context.Context) error {
 	}
 	for _, job := range jobs {
 		result := map[string]any{"valid": false, "engineVersion": core.Version(), "code": "job_rejected"}
-		if job.Kind == "upgrade-prepare" || job.Kind == "upgrade-apply" || job.Kind == "upgrade-rollback" {
+		if job.Kind == "routing-policy-inspect" && c.RoutingPolicyReport != nil {
+			result["routingPolicy"] = c.RoutingPolicyReport()
+			result["valid"], result["code"] = true, ""
+		} else if job.Kind == "routing-policy-apply" && c.RoutingPolicyApply != nil {
+			report, err := c.RoutingPolicyApply(job.Payload, job.ID)
+			result["routingPolicy"] = report
+			result["code"] = "routing_policy_rejected"
+			if err == nil {
+				result["valid"], result["code"] = true, ""
+			}
+			if c.RoutingPolicyRefresh != nil {
+				c.RoutingPolicyRefresh()
+			}
+		} else if job.Kind == "upgrade-prepare" || job.Kind == "upgrade-apply" || job.Kind == "upgrade-rollback" {
 			var request updater.Request
 			if json.Unmarshal(job.Payload, &request) != nil || request.JobID != job.ID || !updater.UUIDPattern.MatchString(request.ID) || (job.Kind == "upgrade-prepare" && request.ID != job.ID) {
 				result["code"] = "upgrade_rejected"
