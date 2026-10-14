@@ -9,13 +9,31 @@ import (
 	"github.com/xtls/xray-core/core"
 	"golang.org/x/mod/semver"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 )
+
+// An existing core may use a local control proxy; never import its remote credentials.
+func LocalPanelProxy(address string) (*url.URL, error) {
+	if address == "" {
+		return nil, nil
+	}
+	u, err := url.Parse(address)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || u.Port() == "" || (u.Scheme != "http" && u.Scheme != "socks5" && u.Scheme != "socks5h") {
+		return nil, errors.New("updater proxy must be an unauthenticated loopback endpoint")
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil || !ip.IsLoopback() {
+		return nil, errors.New("updater proxy must be loopback")
+	}
+	return u, nil
+}
 
 func (e *Engine) panel(ctx context.Context, path string, body any) error {
 	return e.panelRequest(ctx, "POST", path, body, nil)
@@ -47,6 +65,13 @@ func (e *Engine) panelRequest(ctx context.Context, method, path string, body any
 		return err
 	}
 	defer transport.CloseIdleConnections()
+	if e.Profile.PanelProxy != "" {
+		proxy, err := LocalPanelProxy(e.Profile.PanelProxy)
+		if err != nil {
+			return err
+		}
+		transport.Proxy = http.ProxyURL(proxy)
+	}
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	payload, err := json.Marshal(body)
 	if err != nil {

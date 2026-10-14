@@ -65,7 +65,7 @@ The separate NahaN panel is not included in this repository.
   sessions. Manifest changes can restart the engine.
 
 Not all engine protocols have managed adapters. General customer migration,
-GRE management, automatic binary upgrades, imported-certificate renewal and
+GRE management, container binary upgrades, imported-certificate renewal and
 complete production provisioning remain incomplete. Example IPs/URLs are
 placeholders, not working demo servers.
 

@@ -188,6 +188,10 @@ func Serve(ctx context.Context, e *Engine) error {
 					state, err = e.Rollback(worker, request)
 				}
 				if err != nil && state.Stage != "rolled_back" {
+					if state.ID == request.ID {
+						state.Error = "update_failed"
+						e.save(&state, "failed")
+					}
 					failure := Status{ID: request.ID, Stage: "failed", Version: request.Version, UpdatedAt: time.Now().Unix(), Error: "update_failed"}
 					Atomic(filepath.Join(e.Profile.StateDir, "failure.json"), failure)
 				}
