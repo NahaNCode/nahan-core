@@ -48,4 +48,9 @@ func TestManagedInfrastructureShadowsocksProfile(t *testing.T) {
 	if _, err = c.parseEntryProfile(s); err == nil {
 		t.Fatal("infrastructure input claimed customer role")
 	}
+	s.EntryRole = "transit"
+	s.InboundProfile = nil
+	if _, err = c.parseNodeResponse(s); err == nil {
+		t.Fatal("legacy adapter bypassed transit role")
+	}
 }

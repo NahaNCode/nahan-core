@@ -467,6 +467,9 @@ func (c *APIClient) parseNodeResponse(s *serverConfig) (*api.NodeInfo, error) {
 	if len(s.InboundProfile) > 0 {
 		return c.parseEntryProfile(s)
 	}
+	if s.EntryRole != "" {
+		return nil, fmt.Errorf("explicit managed entry roles require an inbound profile")
+	}
 	var (
 		path, host, serviceName, seed, Dest, PrivateKey, MinClientVer, MaxClientVer, Flow, Authority, CurvePreferences, mode, DomainStrategy, ServerNameToVerify string
 		header                                                                                                                                                   json.RawMessage
