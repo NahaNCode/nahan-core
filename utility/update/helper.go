@@ -50,12 +50,21 @@ func Serve(ctx context.Context, e *Engine) error {
 		}
 	}
 	directory := filepath.Dir(Socket(e.Profile.CoreID))
-	if err := os.MkdirAll(directory, 0711); err != nil {
-		return err
-	}
-	info, err := os.Lstat(directory)
-	if err != nil || !info.IsDir() || info.Mode().Perm()&0022 != 0 {
-		return errors.New("unsafe updater socket directory")
+	// Both directories are recreated after reboot under the helper's restrictive umask.
+	for _, current := range []string{filepath.Dir(directory), directory} {
+		if err := os.MkdirAll(current, 0711); err != nil {
+			return err
+		}
+		info, err := os.Lstat(current)
+		if err != nil || !info.IsDir() || info.Mode().Perm()&0022 != 0 {
+			return errors.New("unsafe updater socket directory")
+		}
+		if stat, ok := info.Sys().(*syscall.Stat_t); !ok || stat.Uid != 0 {
+			return errors.New("updater socket directory must be root-owned")
+		}
+		if err := os.Chmod(current, 0711); err != nil {
+			return err
+		}
 	}
 	path := Socket(e.Profile.CoreID)
 	if info, err := os.Lstat(path); err == nil {
