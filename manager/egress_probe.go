@@ -39,7 +39,7 @@ func (m *Manager) ProbeEgressProfile(parent context.Context, p EgressProfile, ch
 	if err := reserved.Close(); err != nil {
 		return err
 	}
-	probe := New(&Config{LogConfig: &LogConfig{Level: "none"}, ResolveEgressPrincipal: m.managerConfig.ResolveEgressPrincipal, ResolveEgressCredential: m.managerConfig.ResolveEgressCredential, ResolveExternalOutbound: m.managerConfig.ResolveExternalOutbound})
+	probe := New(&Config{DnsConfigPath: m.managerConfig.DnsConfigPath, LogConfig: &LogConfig{Level: "none"}, ResolveEgressPrincipal: m.managerConfig.ResolveEgressPrincipal, ResolveEgressCredential: m.managerConfig.ResolveEgressCredential, ResolveExternalOutbound: m.managerConfig.ResolveExternalOutbound})
 	if err := probe.StartChecked(); err != nil {
 		return err
 	}

@@ -17,6 +17,10 @@ func TestEgressRestoreBeforeInboundsRetainsExpiredLeaseAndCheckIsReadOnly(t *tes
 		t.Fatal(err)
 	}
 	defer m.Close()
+	if !m.HasManagedEgressBindings() {
+		t.Fatal("restored binding not visible to revoke guard")
+	}
+	m.RestrictManagedEgress(time.Now().Add(-time.Second))
 	d := m.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher)
 	if _, managed, expired := d.Egress.Lookup("qa"); !managed || !expired {
 		t.Fatal("expired persisted route resumed after restart")

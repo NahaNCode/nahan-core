@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/NahaNCode/nahan-core/app/xdispatcher"
 	"github.com/NahaNCode/nahan-core/utility/egress"
@@ -33,6 +34,21 @@ type egressRuntime struct {
 	sync.Mutex
 	server *core.Instance
 	tags   map[string]bool
+}
+
+// RestrictManagedEgress blocks scoped bindings without changing legacy routing.
+func (m *Manager) RestrictManagedEgress(expires time.Time) {
+	m.egress.Lock()
+	defer m.egress.Unlock()
+	if m.Server != nil {
+		m.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.RestrictLease(expires)
+	}
+}
+
+func (m *Manager) HasManagedEgressBindings() bool {
+	m.egress.Lock()
+	defer m.egress.Unlock()
+	return m.Server != nil && m.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.HasBindings()
 }
 
 // Config hashes provide immutable handler identities. Retired handlers remain

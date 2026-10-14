@@ -44,6 +44,13 @@ func restoreEgress(c *controlplane.Client, config *manager.Config) error {
 }
 
 func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
+	if c.RoutingPolicyRefresh != nil {
+		c.RoutingPolicyRefresh()
+	}
+	if c.Config.HasCustomRouting {
+		c.CloseEgressPreflight()
+		return errors.New("routing policy requires approval")
+	}
 	state, err := c.Egress(context.Background())
 	if err != nil {
 		return err
