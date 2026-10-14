@@ -186,12 +186,17 @@ func run() error {
 	} else {
 		m.Start()
 	}
-	defer func() { m.Close() }()
+	defer func() {
+		if panel != nil {
+			panel.CloseEgressPreflight()
+		}
+		m.Close()
+	}()
 	if panel != nil {
 		if err := syncEgress(panel, m, managerConfig); err != nil {
 			log.Warn("Egress synchronization unavailable")
 		}
-		if err := panel.Heartbeat(context.Background(), codename+" "+version, manifest, startupError); err != nil {
+		if err := panel.Heartbeat(context.Background(), version, manifest, startupError); err != nil {
 			log.Warn(err)
 		}
 	}
@@ -231,6 +236,7 @@ func run() error {
 					lastApplyError = "configuration preflight failed"
 				} else {
 					previous := managerConfig.NodesConfig
+					panel.CloseEgressPreflight()
 					m.Close()
 					managerConfig.NodesConfig = candidate
 					m = manager.New(managerConfig)
@@ -257,7 +263,7 @@ func run() error {
 					}
 				}
 			}
-			if err := panel.Heartbeat(context.Background(), codename+" "+version, manifest, lastApplyError); err != nil {
+			if err := panel.Heartbeat(context.Background(), version, manifest, lastApplyError); err != nil {
 				log.Warn(err)
 			}
 			if err := syncPolicy(panel, m, managerConfig); err != nil {

@@ -1,0 +1,105 @@
+name: Signed Core Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable stable version, for example v1.6.0
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  binaries:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate release name
+        env:
+          VERSION: ${{ inputs.version }}
+        run: '[[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build exact image and native binary
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/nahancode/nahan-core:${{ inputs.version }}-${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ inputs.version }}
+            COMMIT=${{ github.sha }}
+      - name: Export the exact image binary
+        env:
+          IMAGE: ghcr.io/nahancode/nahan-core@${{ steps.image.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p artifacts
+          docker pull --platform "linux/$ARCH" "$IMAGE"
+          container=$(docker create --platform "linux/$ARCH" "$IMAGE")
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/local/bin/NahaN" "artifacts/NahaN-linux-$ARCH"
+          printf '%s\n' "$IMAGE" > "artifacts/NahaN-linux-$ARCH.image"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-core-${{ matrix.arch }}
+          path: artifacts/
+          retention-days: 3
+  publish:
+    needs: binaries
+    runs-on: ubuntu-latest
+    environment: core-releases
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: signed-core-*
+          path: artifacts
+          merge-multiple: true
+      - name: Sign immutable release catalog
+        env:
+          SIGNING_KEY: ${{ secrets.NAHAN_CORE_RELEASE_SIGNING_KEY }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$SIGNING_KEY" > "$key"
+          MODFILE=$(go run ./tools/xray-patch)
+          go run -modfile="$MODFILE" ./tools/release-sign --key "$key" --version "$VERSION" --commit "$GITHUB_SHA"
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo 'This release already exists; immutable releases cannot be overwritten.' >&2
+            exit 1
+          fi
+          gh release create "$VERSION" --target "$GITHUB_SHA" --draft --title "$VERSION" --notes "Signed core runtime, verified updater and automatic host placement. Core restart interrupts active connections."
+          gh release upload "$VERSION" artifacts/NahaN-linux-amd64 artifacts/NahaN-linux-arm64 artifacts/updates.json
+          gh release edit "$VERSION" --draft=false

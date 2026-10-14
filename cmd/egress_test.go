@@ -59,6 +59,7 @@ func TestEgressControlPreparePublishJournalRestartAndStalePlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.CloseEgressPreflight()
 	config := &manager.Config{LogConfig: &manager.LogConfig{Level: "none"}}
 	m := manager.New(config)
 	if err = m.StartChecked(); err != nil {
@@ -71,6 +72,22 @@ func TestEgressControlPreparePublishJournalRestartAndStalePlan(t *testing.T) {
 	}
 	if dispatcher.Egress.Revision() != 0 {
 		t.Fatal("prepare changed routing")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		mu.Lock()
+		ready := len(receipts) > 0
+		mu.Unlock()
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("asynchronous preflight receipt missing")
+		}
+		time.Sleep(time.Millisecond)
+		if err = syncEgress(client, m, config); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mu.Lock()
 	if len(receipts) != 1 || receipts[0]["phase"] != "prepared" || receipts[0]["code"] != "" {

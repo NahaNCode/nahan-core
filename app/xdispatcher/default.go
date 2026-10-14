@@ -583,7 +583,8 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 		return
 	}
 	inTag := routingLink.GetInboundTag()
-	managedTag, managed, expired := d.Egress.Lookup(inTag)
+	managedTag, managed, expired, release := d.Egress.Acquire(inTag)
+	defer release()
 	isPickRoute := 0
 	if forcedOutboundTag := session.GetForcedOutboundTagFromContext(ctx); forcedOutboundTag != "" {
 		ctx = session.SetForcedOutboundTagToContext(ctx, "")

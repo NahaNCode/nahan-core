@@ -20,7 +20,7 @@ import (
 // ProbeEgressProfile uses the real host namespace and engine transport without
 // installing handlers or changing routing in the customer-serving engine.
 func (m *Manager) ProbeEgressProfile(parent context.Context, p EgressProfile, check func(context.Context, string, string, string) error) error {
-	if check == nil || (p.Principal == nil && p.Secret == nil) {
+	if check == nil || (p.Principal == nil && p.Secret == nil && p.External == nil) {
 		return errors.New("managed path probe unavailable")
 	}
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
@@ -39,7 +39,7 @@ func (m *Manager) ProbeEgressProfile(parent context.Context, p EgressProfile, ch
 	if err := reserved.Close(); err != nil {
 		return err
 	}
-	probe := New(&Config{LogConfig: &LogConfig{Level: "none"}, ResolveEgressPrincipal: m.managerConfig.ResolveEgressPrincipal, ResolveEgressCredential: m.managerConfig.ResolveEgressCredential})
+	probe := New(&Config{LogConfig: &LogConfig{Level: "none"}, ResolveEgressPrincipal: m.managerConfig.ResolveEgressPrincipal, ResolveEgressCredential: m.managerConfig.ResolveEgressCredential, ResolveExternalOutbound: m.managerConfig.ResolveExternalOutbound})
 	if err := probe.StartChecked(); err != nil {
 		return err
 	}

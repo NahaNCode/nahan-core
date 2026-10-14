@@ -126,6 +126,40 @@ func TestEgressPrincipalDurableRestartRetainsIdentityAndRevocation(t *testing.T)
 	}
 }
 
+func TestEgressPrincipalCompactionPreservesEncryptedReplayFence(t *testing.T) {
+	store := NewPrincipalStore(filepath.Join(t.TempDir(), "private"), principalTarget, strings.Repeat("c", 64))
+	request := PrincipalRequest{Staged: true, Protocol: "vless", Tag: "qa-principal", Scope: egress.CredentialScope{RouteID: principalRoute, SourceCoreID: principalSource, TargetCoreID: principalTarget, Revision: 2, ExpiresAt: time.Now().Add(-601 * time.Second).Unix()}}
+	if err := store.save(principalRecord{Request: request, Revoked: true}); err != nil {
+		t.Fatal(err)
+	}
+	filename, err := store.filename(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.compact(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(filename); !os.IsNotExist(err) {
+		t.Fatal("expired credential not removed", err)
+	}
+	index, err := os.ReadFile(filepath.Join(store.directory, "retired.bin"))
+	if err != nil || bytes.Contains(index, []byte(principalRoute)) {
+		t.Fatal("retirement index absent or plaintext", err)
+	}
+	restarted := NewPrincipalStore(store.directory, principalTarget, store.key)
+	request.Scope.ExpiresAt = time.Now().Add(time.Minute).Unix()
+	if _, err = restarted.load(request); err == nil {
+		t.Fatal("compacted revision revived after restart")
+	}
+	request.Scope.Revision = 3
+	if value, err := restarted.load(request); err != nil || value != nil {
+		t.Fatal("new revision incorrectly blocked", err)
+	}
+	if _, err = restarted.records(); err != nil {
+		t.Fatal("retirement index prevented normal restore", err)
+	}
+}
+
 func TestEgressPrincipalJournalRejectsTamperingAndExpiredRenewal(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

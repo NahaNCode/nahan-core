@@ -8,16 +8,20 @@ import (
 	"fmt"
 	"github.com/NahaNCode/nahan-core/utility/entryprofile"
 	"github.com/NahaNCode/nahan-core/utility/paneltls"
+	updater "github.com/NahaNCode/nahan-core/utility/update"
 	"github.com/xtls/xray-core/core"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
 
 type Config struct {
+	HostSocket       string `mapstructure:"HostSocket"`
 	HasCustomRouting bool   `mapstructure:"-"`
 	APIHost          string `mapstructure:"ApiHost"`
 	CoreID           string `mapstructure:"CoreID"`
@@ -38,6 +42,7 @@ type Client struct {
 	Config             *Config
 	Key                string
 	http               *http.Client
+	preflight          egressPreflight
 }
 
 var ErrUnauthorized = errors.New("core authentication revoked")
@@ -83,7 +88,7 @@ func (c *Client) request(ctx context.Context, method, resource string, body any,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Nahan-Policy-Runtime", "2")
-	req.Header.Set("X-Nahan-Egress-Runtime", "1")
+	req.Header.Set("X-Nahan-Egress-Runtime", "2")
 	res, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("control plane unavailable: %w", err)
@@ -122,6 +127,16 @@ func (c *Client) Heartbeat(ctx context.Context, version string, manifest *Manife
 	for _, node := range manifest.Nodes {
 		ids = append(ids, node.ID)
 	}
-	return c.request(ctx, "POST", "heartbeat", map[string]any{"version": version, "revision": manifest.Revision, "nodeIds": ids, "lastError": lastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
+	err := c.request(ctx, "POST", "heartbeat", map[string]any{"runtimeArch": runtime.GOOS + "-" + runtime.GOARCH, "runtimeBuild": updater.RunningDigest(), "updateRuntimeVersion": boolRuntime(updater.Available(c.Config.CoreID)), "hostPlacement": c.hostPlacement(ctx), "version": version, "revision": manifest.Revision, "nodeIds": ids, "lastError": lastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
 		"xrayVersion": core.Version(), "migrationRuntimeVersion": 1, "customRoutingEnabled": c.Config.HasCustomRouting, "controlEndpoint": strings.TrimRight(c.Config.APIHost, "/") + "/api/core/v1/cores/" + c.Config.CoreID + "/heartbeat", "reportIntervalSeconds": 10}, nil)
+	if err == nil && updater.Available(c.Config.CoreID) && lastError == "" {
+		updater.Atomic(filepath.Join(filepath.Dir(c.Config.KeyFile), "update-heartbeat-"+c.Config.CoreID+".json"), updater.Receipt{CoreID: c.Config.CoreID, Revision: manifest.Revision, Digest: updater.RunningDigest(), Version: version, SeenAt: time.Now().Unix()})
+	}
+	return err
+}
+func boolRuntime(available bool) int {
+	if available {
+		return 1
+	}
+	return 0
 }

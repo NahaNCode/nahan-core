@@ -19,6 +19,9 @@ type EgressDocument struct {
 func (c *Client) ImportedCredentialDirectory() string {
 	return filepath.Join(filepath.Dir(c.Config.KeyFile), "egress-credentials")
 }
+func (c *Client) ExternalOutboundDirectory() string {
+	return filepath.Join(filepath.Dir(c.Config.KeyFile), "external-outbounds")
+}
 func (c *Client) SyncEgressCredentials(ctx context.Context) error {
 	key, public, err := egress.RecipientIdentity(filepath.Join(filepath.Dir(c.Config.KeyFile), "egress-recipient.key"))
 	if err != nil {
@@ -31,7 +34,7 @@ func (c *Client) SyncEgressCredentials(ctx context.Context) error {
 			principalRuntime = 4
 		}
 	}
-	if err = c.request(ctx, "POST", "egress/identity", map[string]any{"publicKey": public, "principalRuntimeVersion": principalRuntime}, nil); err != nil {
+	if err = c.request(ctx, "POST", "egress/identity", map[string]any{"publicKey": public, "principalRuntimeVersion": principalRuntime, "externalRuntimeVersion": 1}, nil); err != nil {
 		return err
 	}
 	var imports []egress.CredentialImport
@@ -98,5 +101,5 @@ func (c *Client) Egress(ctx context.Context) (EgressControl, error) {
 	return state, nil
 }
 func (c *Client) EgressReceipt(ctx context.Context, phase string, document EgressDocument, code string) error {
-	return c.request(ctx, "POST", "egress/receipt", map[string]any{"phase": phase, "revision": document.Revision, "digest": document.Digest, "code": code}, nil)
+	return c.request(ctx, "POST", "egress/receipt", map[string]any{"phase": phase, "revision": document.Revision, "digest": document.Digest, "code": code, "probeRuntimeVersion": 1}, nil)
 }

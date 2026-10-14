@@ -57,7 +57,13 @@ func (s *PrincipalStore) save(record principalRecord) error {
 		if listErr != nil {
 			return listErr
 		}
-		if len(entries) >= 512 {
+		count := 0
+		for _, entry := range entries {
+			if entry.Name() != "retired.bin" {
+				count++
+			}
+		}
+		if count >= 512 {
 			return errors.New("destination principal journal capacity reached")
 		}
 	} else if err != nil {
@@ -82,6 +88,13 @@ func (s *PrincipalStore) load(r PrincipalRequest) (*principalRecord, error) {
 	}
 	state, err := egress.LoadState(filename, s.coreID, s.key)
 	if errors.Is(err, os.ErrNotExist) {
+		floors, floorErr := s.floors()
+		if floorErr != nil {
+			return nil, floorErr
+		}
+		if floors[r.Scope.RouteID+"/"+r.Scope.SourceCoreID] >= r.Scope.Revision {
+			return nil, errors.New("retired journaled principal revision")
+		}
 		return nil, nil
 	}
 	if err != nil {
@@ -114,12 +127,18 @@ func (s *PrincipalStore) records() ([]principalRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(files) > 512 {
+	if len(files) > 513 {
 		return nil, errors.New("destination principal journal capacity exceeded")
 	}
 	var records []principalRecord
 	for _, file := range files {
 		name := file.Name()
+		if name == "retired.bin" {
+			if _, err := s.floors(); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if strings.HasPrefix(name, ".egress-state-") {
 			continue
 		}
@@ -147,6 +166,99 @@ func (s *PrincipalStore) records() ([]principalRecord, error) {
 		}
 	}
 	return records, nil
+}
+
+func (s *PrincipalStore) floors() (map[string]int64, error) {
+	state, err := egress.LoadState(filepath.Join(s.directory, "retired.bin"), s.coreID, s.key)
+	if errors.Is(err, os.ErrNotExist) {
+		return make(map[string]int64), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var values map[string]int64
+	if json.Unmarshal(state.Plan, &values) != nil || values == nil || len(values) > 512 {
+		return nil, errors.New("invalid principal retirement index")
+	}
+	for key, revision := range values {
+		parts := strings.Split(key, "/")
+		if len(parts) != 2 || revision < 1 {
+			return nil, errors.New("invalid principal retirement scope")
+		}
+		r := PrincipalRequest{Scope: egress.CredentialScope{RouteID: parts[0], SourceCoreID: parts[1], TargetCoreID: s.coreID, Revision: revision, ExpiresAt: time.Now().Add(time.Minute).Unix()}}
+		if _, err := s.filename(r); err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
+}
+
+// Compact expired credentials only after the entire job replay window, keeping
+// an encrypted high-water mark so removing a file cannot resurrect its revision.
+func (s *PrincipalStore) compact() error {
+	if err := s.safeDirectory(); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	floors, err := s.floors()
+	if err != nil {
+		return err
+	}
+	files, err := os.ReadDir(s.directory)
+	if err != nil {
+		return err
+	}
+	var remove []string
+	for _, file := range files {
+		if file.Name() == "retired.bin" || strings.HasPrefix(file.Name(), ".egress-state-") {
+			continue
+		}
+		state, err := egress.LoadState(filepath.Join(s.directory, file.Name()), s.coreID, s.key)
+		if err != nil {
+			return err
+		}
+		var record principalRecord
+		if json.Unmarshal(state.Plan, &record) != nil {
+			return errors.New("invalid principal journal during compaction")
+		}
+		filename, err := s.filename(record.Request)
+		if err != nil || filepath.Base(filename) != file.Name() || state.ExpiresAt.Unix() != record.Request.Scope.ExpiresAt {
+			return errors.New("principal compaction scope mismatch")
+		}
+		if time.Now().Unix() <= record.Request.Scope.ExpiresAt+600 {
+			continue
+		}
+		identity := record.Request.Scope.RouteID + "/" + record.Request.Scope.SourceCoreID
+		if floors[identity] < record.Request.Scope.Revision {
+			floors[identity] = record.Request.Scope.Revision
+		}
+		if len(floors) > 512 {
+			return errors.New("principal tombstone capacity reached")
+		}
+		remove = append(remove, filename)
+	}
+	if len(remove) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(floors)
+	if err != nil {
+		return err
+	}
+	if err = egress.SaveState(filepath.Join(s.directory, "retired.bin"), s.coreID, s.key, egress.State{CoreID: s.coreID, ExpiresAt: time.Now(), Plan: data}); err != nil {
+		return err
+	}
+	for _, filename := range remove {
+		if err = os.Remove(filename); err != nil {
+			return err
+		}
+	}
+	directory, err := os.Open(s.directory)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func (s *PrincipalStore) safeDirectory() error {

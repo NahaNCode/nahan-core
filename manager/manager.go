@@ -29,6 +29,7 @@ type Manager struct {
 	egress            egressRuntime
 	principals        map[string]*principalLease
 	principalInstalls int
+	retiredPrincipals map[string]int64
 	statusLock        sync.Mutex
 	managerConfig     *Config
 	Server            *core.Instance
