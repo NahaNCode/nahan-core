@@ -2,6 +2,8 @@ package manager
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/NahaNCode/nahan-core/utility/controlplane"
 	"github.com/NahaNCode/nahan-core/utility/egress"
+	"github.com/NahaNCode/nahan-core/utility/entryprofile"
 	"github.com/xtls/xray-core/core"
 )
 
@@ -92,6 +95,32 @@ func TestEgressManagedPathProbeVerifiesTLSAndDoesNotChangeCustomerEngine(t *test
 	if conn, err := net.DialTimeout("tcp", probeAddress, 100*time.Millisecond); err == nil {
 		conn.Close()
 		t.Fatal("probe listener leaked")
+	}
+	principal, err := egress.ReadPrincipal(c.ImportedCredentialDirectory(), principalSource, c.Key, *p.Principal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	externalConfig, _ := json.Marshal(map[string]any{"protocol": "vless", "settings": map[string]any{"vnext": []any{map[string]any{"address": "127.0.0.1", "port": port, "users": []any{map[string]any{"id": principal.ID, "encryption": "none"}}}}}})
+	externalScope := egress.ExternalScope{ID: principalRoute, CoreID: principalSource, ExpiresAt: time.Now().Add(time.Minute).Unix()}
+	label, _ := externalScope.Label()
+	envelope, err := entryprofile.Seal(externalConfig, public, label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(externalConfig)
+	request := egress.ExternalImport{Scope: externalScope, Digest: hex.EncodeToString(hash[:]), Protocol: "vless", Envelope: envelope}
+	if err = egress.ImportExternal(c.ExternalOutboundDirectory(), principalSource, c.Key, rsaKey, request); err != nil {
+		t.Fatal(err)
+	}
+	source.managerConfig.ResolveExternalOutbound = func(binding egress.ExternalBinding) (json.RawMessage, error) {
+		return egress.ReadExternal(c.ExternalOutboundDirectory(), principalSource, c.Key, binding)
+	}
+	externalProfile := EgressProfile{ID: principalRoute, External: &egress.ExternalBinding{ID: principalRoute, Digest: request.Digest, Protocol: "vless"}}
+	if err = source.ProbeEgressProfile(context.Background(), externalProfile, c.ProbeViaSOCKS); err != nil {
+		t.Fatal("real imported personal path probe failed", err)
+	}
+	if !principalRoundTrip(customerConn) || source.Server != originalSource {
+		t.Fatal("personal import/probe changed customer traffic")
 	}
 	wrongTrust, err := controlplane.New(&controlplane.Config{CoreID: principalSource, KeyFile: keyfile, APIHost: panel.URL})
 	if err != nil {

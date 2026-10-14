@@ -15,6 +15,9 @@ import (
 )
 
 func restoreEgress(c *controlplane.Client, config *manager.Config) error {
+	config.ResolveExternalOutbound = func(binding egress.ExternalBinding) (json.RawMessage, error) {
+		return egress.ReadExternal(c.ExternalOutboundDirectory(), c.Config.CoreID, c.Key, binding)
+	}
 	config.ResolveEgressPrincipal = func(binding egress.PrincipalBinding) (egress.PrincipalCredential, error) {
 		return egress.ReadPrincipal(c.ImportedCredentialDirectory(), c.Config.CoreID, c.Key, binding)
 	}
@@ -50,21 +53,41 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 			return err
 		}
 	}
+	// Renew/apply the live snapshot before starting any candidate path work.
+	if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
+		return err
+	}
 	if state.Prepared != nil {
 		var plan manager.EgressPlan
 		code := ""
 		if json.Unmarshal([]byte(state.Prepared.PlanJSON), &plan) != nil || m.CheckEgress(plan) != nil {
 			code = "preflight_failed"
 		}
-		if err = c.EgressReceipt(context.Background(), "prepared", *state.Prepared, code); err != nil {
-			return err
+		if code != "" {
+			c.CloseEgressPreflight()
+			return c.EgressReceipt(context.Background(), "prepared", *state.Prepared, code)
 		}
+		return c.PreparedReceipt(context.Background(), state.Prepared, func(ctx context.Context) error {
+			for _, profile := range plan.Profiles {
+				if profile.Principal != nil || profile.Secret != nil || profile.External != nil {
+					if err := m.ProbeEgressProfile(ctx, profile, c.ProbeViaSOCKS); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
 	}
-	if state.Desired == nil {
+	return c.PreparedReceipt(context.Background(), nil, nil)
+}
+
+func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config, desired *controlplane.EgressDocument) error {
+	if desired == nil {
 		return nil
 	}
-	document := *state.Desired
+	document := *desired
 	var plan manager.EgressPlan
+	var err error
 	if json.Unmarshal([]byte(document.PlanJSON), &plan) != nil {
 		return c.EgressReceipt(context.Background(), "applied", document, "apply_failed")
 	}

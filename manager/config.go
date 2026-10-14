@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"encoding/json"
 	"github.com/NahaNCode/nahan-core/api"
 	"github.com/NahaNCode/nahan-core/service/controller"
 	"github.com/NahaNCode/nahan-core/utility/connectionpolicy"
@@ -10,6 +11,7 @@ import (
 )
 
 type Config struct {
+	ResolveExternalOutbound func(egress.ExternalBinding) (json.RawMessage, error)             `mapstructure:"-"`
 	PrincipalStore          *PrincipalStore                                                   `mapstructure:"-"`
 	ResolveEgressPrincipal  func(egress.PrincipalBinding) (egress.PrincipalCredential, error) `mapstructure:"-"`
 	ResolveEgressCredential func(egress.CredentialBinding) (egress.SSCredential, error)       `mapstructure:"-"`

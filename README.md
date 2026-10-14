@@ -1,8 +1,53 @@
 # NahaN Core
 
+## Verified Native Updates
+
+For an existing, dedicated systemd installation, register the updater once as
+root using a verified release binary. Registration discovers the running binary
+and configuration; it does not restart the core:
+
+```sh
+sudo ./NahaN update register --service YOUR-CORE.service
+sudo nahan-core update check
+sudo nahan-core update
+sudo nahan-core update status
+sudo nahan-core update rollback
+```
+
+Use `--core UUID` when several cores are registered. Updates require explicit
+confirmation: restarting the selected core can interrupt its active connections.
+The panel can prepare, upgrade and roll back a registered core after it reports
+updater capability. Preparation downloads only Ed25519-signed official releases,
+checks the exact binary digest, configuration, architecture, free disk space and
+panel revision. Activation rechecks these conditions and retains a per-operation
+backup. Failed activation restores the previous binary. The panel marks an
+upgrade complete only after a fresh running-build receipt and heartbeat.
+
+The privileged helper exposes only a per-core local Unix socket. It does not
+accept shell commands, arbitrary download URLs or remote profile paths. Shared
+binary installations and container registration are refused; container upgrades
+must currently use the deployment operator's reviewed image replacement process.
+Do not change a registered service's user or binary path without re-registration.
+
 [راهنمای فارسی](README.fa.md)
 
 An open-source Linux node runtime for the NahaN control plane, built on Xray.
+
+### Automatic Host Placement
+
+Updated native cores request a short-lived, core-specific signed attestation from
+the local host agent at `/run/nahan-host-placement/placement.sock`. The panel
+verifies it against the public key registered by that authenticated agent before
+automatically assigning the core's host. Neither public IP nor hostname is used
+as proof. Missing local access does not interrupt core heartbeat or routing.
+Conflicting existing placements are reported rather than silently overwritten.
+
+For containerized root-running cores, expose only the socket directory through
+the read-only mount
+`--mount type=bind,src=/run/nahan-host-placement,dst=/run/nahan-host-placement,readonly`.
+Never mount the agent's credential or private state directory. Other socket paths
+can be configured with `ControlPlane.HostSocket`. Non-root services need an
+explicit permissioned local integration; do not make the socket world-accessible.
 
 **Developer:** NahaN  
 **Contact:** nahancode@gmail.com  

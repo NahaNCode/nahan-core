@@ -33,6 +33,7 @@ type Registry struct {
 	expires  time.Time
 	bindings map[string]string
 	entries  map[int64]string
+	users    map[string]int
 }
 
 func Canonical(s Snapshot) (Snapshot, string, error) {
@@ -92,6 +93,10 @@ func (r *Registry) Replace(s Snapshot, available func(string) bool) error {
 func (r *Registry) Lookup(inbound string) (outbound string, managed, expired bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.lookup(inbound)
+}
+
+func (r *Registry) lookup(inbound string) (outbound string, managed, expired bool) {
 	outbound, managed = r.bindings[inbound]
 	if !managed {
 		parts := strings.Split(inbound, "_")
@@ -104,6 +109,49 @@ func (r *Registry) Lookup(inbound string) (outbound string, managed, expired boo
 		}
 	}
 	return outbound, managed, managed && !time.Now().Before(r.expires)
+}
+
+// Acquire pins the selected immutable handler before a routing replacement can
+// retire it. Release happens only when the outbound dispatch has finished.
+func (r *Registry) Acquire(inbound string) (outbound string, managed, expired bool, release func()) {
+	r.mu.Lock()
+	outbound, managed, expired = r.lookup(inbound)
+	if managed && !expired {
+		if r.users == nil {
+			r.users = make(map[string]int)
+		}
+		r.users[outbound]++
+	}
+	r.mu.Unlock()
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			if !managed || expired {
+				return
+			}
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.users[outbound]--
+			if r.users[outbound] == 0 {
+				delete(r.users, outbound)
+			}
+		})
+	}
+	return
+}
+
+func (r *Registry) CanRetire(outbound string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.users[outbound] > 0 {
+		return false
+	}
+	for _, tag := range r.bindings {
+		if tag == outbound {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Registry) Validate(s Snapshot) error {

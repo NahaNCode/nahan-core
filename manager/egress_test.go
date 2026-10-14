@@ -47,7 +47,8 @@ func TestEgressHotSwapPreservesRealStreamAndFailsClosed(t *testing.T) {
 	if err = m.ApplyEgress(plan(1, allow)); err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.ContextWithInbound(context.Background(), &session.Inbound{Tag: "qa"})
+	ctx, cancel := context.WithCancel(session.ContextWithInbound(context.Background(), &session.Inbound{Tag: "qa"}))
+	defer cancel()
 	target := xnet.TCPDestination(xnet.ParseAddress("127.0.0.1"), xnet.Port(echo.Addr().(*net.TCPAddr).Port))
 	conn, err := core.Dial(ctx, m.Server, target)
 	if err != nil {
@@ -103,7 +104,7 @@ func TestEgressHotSwapPreservesRealStreamAndFailsClosed(t *testing.T) {
 	if !check(recovered) || !check(conn) {
 		t.Fatal("rollback did not restore new flows and retain old flow")
 	}
-	if len(m.egress.tags) != 2 {
+	if len(m.egress.tags) > 2 {
 		t.Fatal("idempotent handler was duplicated")
 	}
 	withdrawal := EgressPlan{Snapshot: egress.Snapshot{Revision: 4, LeaseSeconds: 30, Bindings: []egress.Binding{}}, Profiles: []EgressProfile{}}
@@ -132,6 +133,22 @@ func TestEgressHotSwapPreservesRealStreamAndFailsClosed(t *testing.T) {
 	}
 	if m.ApplyEgress(plan(3, allow)) == nil {
 		t.Fatal("older plan revived withdrawn route")
+	}
+	conn.Close()
+	recovered.Close()
+	cancel()
+	if blocked != nil {
+		blocked.Close()
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for len(m.egress.tags) > 0 {
+		if err = m.ApplyEgress(withdrawal); err != nil {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("retired handlers were not reclaimed after streams closed")
+		}
+		time.Sleep(time.Millisecond)
 	}
 	t.Log("real TCP echo: hot swap, block, failed staging, rollback, withdrawal; old streams preserved")
 }

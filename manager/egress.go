@@ -18,9 +18,10 @@ import (
 )
 
 type EgressProfile struct {
+	External  *egress.ExternalBinding   `json:"external,omitempty"`
 	Principal *egress.PrincipalBinding  `json:"principal,omitempty"`
 	ID        string                    `json:"id"`
-	Config    json.RawMessage           `json:"config"`
+	Config    json.RawMessage           `json:"config,omitempty"`
 	Tunnel    *egress.TunnelBinding     `json:"tunnel,omitempty"`
 	Secret    *egress.CredentialBinding `json:"secret,omitempty"`
 }
@@ -61,6 +62,16 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 	aliases := map[string]string{}
 	configs := map[string]*core.OutboundHandlerConfig{}
 	for _, p := range plan.Profiles {
+		if p.External != nil {
+			if len(p.Config) > 0 || p.Principal != nil || p.Secret != nil || p.Tunnel != nil || m.managerConfig.ResolveExternalOutbound == nil {
+				return errors.New("invalid external profile scope")
+			}
+			resolved, err := m.managerConfig.ResolveExternalOutbound(*p.External)
+			if err != nil {
+				return errors.New("external outbound unavailable")
+			}
+			p.Config = resolved
+		}
 		if p.ID == "" || len(p.ID) > 128 || len(p.Config) > 65536 {
 			return errors.New("invalid egress profile")
 		}
@@ -153,6 +164,14 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 	if checkOnly {
 		return nil
 	}
+	// Never retire a handler selected by the candidate or held by a live stream.
+	for tag := range m.egress.tags {
+		if configs[tag] == nil && dispatcher.Egress.CanRetire(tag) {
+			if obm.RemoveHandler(context.Background(), tag) == nil {
+				delete(m.egress.tags, tag)
+			}
+		}
+	}
 	newCount := 0
 	for tag := range configs {
 		if !m.egress.tags[tag] {
@@ -188,6 +207,13 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 	}
 	for _, tag := range created {
 		m.egress.tags[tag] = true
+	}
+	for tag := range m.egress.tags {
+		if configs[tag] == nil && dispatcher.Egress.CanRetire(tag) {
+			if obm.RemoveHandler(context.Background(), tag) == nil {
+				delete(m.egress.tags, tag)
+			}
+		}
 	}
 	return nil
 }

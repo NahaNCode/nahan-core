@@ -116,7 +116,13 @@ func (m *Manager) ProvisionEgressPrincipal(coreID string, r PrincipalRequest) (e
 		return empty, err
 	}
 	key := principalKey(r)
+	if err := m.prunePrincipals(); err != nil {
+		return empty, err
+	}
 	previous := m.principals[key]
+	if previous == nil && m.retiredPrincipals[r.Scope.RouteID+"/"+r.Scope.SourceCoreID] >= r.Scope.Revision {
+		return empty, errors.New("retired principal revision")
+	}
 	if previous != nil && r.Scope.Revision < previous.request.Scope.Revision {
 		return empty, errors.New("stale principal revision")
 	}
@@ -198,9 +204,37 @@ func (m *Manager) ProvisionEgressPrincipal(coreID string, r PrincipalRequest) (e
 		m.principals = map[string]*principalLease{}
 	}
 	m.principals[key] = lease
-	m.principalInstalls++
+	if previous == nil {
+		m.principalInstalls++
+	}
 	m.armPrincipal(key, lease)
 	return sealed, nil
+}
+
+func (m *Manager) prunePrincipals() error {
+	if m.managerConfig.PrincipalStore != nil {
+		if err := m.managerConfig.PrincipalStore.compact(); err != nil {
+			return err
+		}
+	}
+	for key, lease := range m.principals {
+		if !lease.revoked || time.Now().Unix() <= lease.request.Scope.ExpiresAt+600 {
+			continue
+		}
+		identity := lease.request.Scope.RouteID + "/" + lease.request.Scope.SourceCoreID
+		if m.retiredPrincipals == nil {
+			m.retiredPrincipals = make(map[string]int64)
+		}
+		if _, exists := m.retiredPrincipals[identity]; !exists && len(m.retiredPrincipals) >= 512 {
+			return errors.New("principal tombstone capacity reached")
+		}
+		if m.retiredPrincipals[identity] < lease.request.Scope.Revision {
+			m.retiredPrincipals[identity] = lease.request.Scope.Revision
+		}
+		delete(m.principals, key)
+		m.principalInstalls--
+	}
+	return nil
 }
 
 func (m *Manager) armPrincipal(key string, lease *principalLease) {

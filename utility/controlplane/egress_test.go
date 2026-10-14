@@ -27,7 +27,7 @@ func TestEgressExactDocumentValidationAndScopedReceipt(t *testing.T) {
 	const coreID = "11111111-1111-4111-8111-111111111111"
 	var received bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer private-key" || r.Header.Get("X-Nahan-Egress-Runtime") != "1" {
+		if r.Header.Get("Authorization") != "Bearer private-key" || r.Header.Get("X-Nahan-Egress-Runtime") != "2" {
 			t.Error("egress request scope missing")
 		}
 		if r.Method == "GET" {
