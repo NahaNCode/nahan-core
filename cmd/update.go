@@ -78,10 +78,8 @@ func init() {
 		}
 		id := config.GetString("ControlPlane.CoreID")
 		keyFile := config.GetString("ControlPlane.KeyFile")
-		for _, path := range []string{binary, cfgFile, keyFile} {
-			if err := updater.ProtectedPath(path); err != nil {
-				return err
-			}
+		if err := updater.ProtectedPath(binary); err != nil {
+			return err
 		}
 		if err := exclusiveBinary(binary); err != nil {
 			return err
@@ -108,6 +106,11 @@ func init() {
 		}
 		if err := p.Validate(); err != nil {
 			return err
+		}
+		for _, path := range []string{cfgFile, keyFile} {
+			if err := updater.ProtectedDataPath(path, p.CoreUID); err != nil {
+				return err
+			}
 		}
 		if !filepath.IsAbs(keyFile) {
 			return errors.New("registered credential path must be absolute")

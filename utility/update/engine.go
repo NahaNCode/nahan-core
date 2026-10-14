@@ -114,6 +114,14 @@ func LoadProfile(path string) (Profile, error) {
 
 // Every ancestor is checked: a protected leaf under a writable directory is not protected.
 func ProtectedPath(path string) error {
+	return protectedOwnerPath(path, 0)
+}
+
+func ProtectedDataPath(path string, uid int) error {
+	return protectedOwnerPath(path, uint32(uid))
+}
+
+func protectedOwnerPath(path string, owner uint32) error {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return errors.New("protected path must be absolute and canonical")
 	}
@@ -123,8 +131,8 @@ func ProtectedPath(path string) error {
 			return errors.New("unsafe installation path")
 		}
 		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || stat.Uid != 0 {
-			return errors.New("installation path must be root-owned")
+		if !ok || (stat.Uid != 0 && stat.Uid != owner) {
+			return errors.New("installation path has an unexpected owner")
 		}
 		if current == "/" {
 			return nil
@@ -192,10 +200,11 @@ func (e *Engine) setup() error {
 		if e.Profile.Mode != "native" {
 			return errors.New("container upgrades require a verified deployment adapter")
 		}
-		for _, path := range []string{e.Profile.Binary, e.Profile.Config} {
-			if err := ProtectedPath(path); err != nil {
-				return err
-			}
+		if err := ProtectedPath(e.Profile.Binary); err != nil {
+			return err
+		}
+		if err := ProtectedDataPath(e.Profile.Config, e.Profile.CoreUID); err != nil {
+			return err
 		}
 	}
 	if err := os.MkdirAll(e.Profile.StateDir, 0700); err != nil {
