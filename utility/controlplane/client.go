@@ -139,7 +139,7 @@ func (c *Client) Heartbeat(ctx context.Context, version string, manifest *Manife
 		ids = append(ids, node.ID)
 	}
 	err := c.request(ctx, "POST", "heartbeat", map[string]any{"runtimeArch": runtime.GOOS + "-" + runtime.GOARCH, "runtimeBuild": updater.RunningDigest(), "updateRuntimeVersion": boolRuntime(updater.Available(c.Config.CoreID)), "hostPlacement": c.hostPlacement(ctx), "version": version, "revision": manifest.Revision, "nodeIds": ids, "lastError": lastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
-		"routingPolicy": policy, "xrayVersion": core.Version(), "migrationRuntimeVersion": 1, "customRoutingEnabled": c.Config.HasCustomRouting, "controlEndpoint": strings.TrimRight(c.Config.APIHost, "/") + "/api/core/v1/cores/" + c.Config.CoreID + "/heartbeat", "reportIntervalSeconds": 10}, nil)
+		"transitRuntimeVersion": 1, "routingPolicy": policy, "xrayVersion": core.Version(), "migrationRuntimeVersion": 1, "customRoutingEnabled": c.Config.HasCustomRouting, "controlEndpoint": strings.TrimRight(c.Config.APIHost, "/") + "/api/core/v1/cores/" + c.Config.CoreID + "/heartbeat", "reportIntervalSeconds": 10}, nil)
 	if err == nil && updater.Available(c.Config.CoreID) && lastError == "" {
 		updater.Atomic(filepath.Join(filepath.Dir(c.Config.KeyFile), "update-heartbeat-"+c.Config.CoreID+".json"), updater.Receipt{CoreID: c.Config.CoreID, Revision: manifest.Revision, Digest: updater.RunningDigest(), Version: version, SeenAt: time.Now().Unix()})
 	}

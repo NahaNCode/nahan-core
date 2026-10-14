@@ -109,6 +109,8 @@ type DefaultDispatcher struct {
 	ConnectionPolicy connectionpolicy.Policy
 	Egress           egress.Registry
 	ExitRoutes       exitroute.Policy
+	transitMu        sync.RWMutex
+	transitTags      map[string]bool
 	sessionMu        sync.Mutex
 	sessions         map[string]map[*transport.Link]func()
 	revoked          map[string]bool
@@ -222,6 +224,30 @@ func (d *DefaultDispatcher) Init(config *Config, om outbound.Manager, router rou
 	d.RuleManager = rule.New()
 	d.dns = dns
 	return nil
+}
+
+// RequireTransit reserves a tag before its listener starts. Reservations remain
+// until engine shutdown so queued requests cannot fall back after input removal.
+func (d *DefaultDispatcher) RequireTransit(tag string) error {
+	if tag == "" || len(tag) > 128 {
+		return errors.New("invalid transit input tag")
+	}
+	d.transitMu.Lock()
+	defer d.transitMu.Unlock()
+	if d.transitTags == nil {
+		d.transitTags = make(map[string]bool)
+	}
+	if !d.transitTags[tag] && len(d.transitTags) >= 1024 {
+		return errors.New("transit reservation capacity exceeded")
+	}
+	d.transitTags[tag] = true
+	return nil
+}
+
+func (d *DefaultDispatcher) TransitRequired(tag string) bool {
+	d.transitMu.RLock()
+	defer d.transitMu.RUnlock()
+	return d.transitTags[tag]
 }
 
 // Type implements common.HasType.
@@ -599,6 +625,11 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 	}
 	exitTag, exitManaged, exitExpired, exitRelease := d.ExitRoutes.Acquire(inTag, sourceIP, localIP)
 	defer exitRelease()
+	if d.TransitRequired(inTag) && (!managed || expired || exitManaged) {
+		common.Close(link.Writer)
+		common.Interrupt(link.Reader)
+		return
+	}
 	isPickRoute := 0
 	if forcedOutboundTag := session.GetForcedOutboundTagFromContext(ctx); forcedOutboundTag != "" {
 		ctx = session.SetForcedOutboundTagToContext(ctx, "")

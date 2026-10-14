@@ -13,6 +13,8 @@ type serverConfig struct {
 }
 
 type server struct {
+	EntryRole       string          `json:"entryRole"`
+	Infrastructure  bool            `json:"infrastructure"`
 	InboundProfile  json.RawMessage `json:"inboundProfile"`
 	Address         string          `json:"address"`
 	Certmode        string          `json:"certmode"`

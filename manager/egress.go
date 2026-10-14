@@ -83,6 +83,14 @@ func (m *Manager) applyEgressRuntime(plan EgressPlan, checkOnly bool, state *egr
 		registry = &dispatcher.Egress
 	}
 	aliases := map[string]string{}
+	transitProfiles := map[string]bool{}
+	if state == &m.egress {
+		for _, binding := range plan.Snapshot.Bindings {
+			if dispatcher.TransitRequired(binding.Inbound) {
+				transitProfiles[binding.Outbound] = true
+			}
+		}
+	}
 	configs := map[string]*core.OutboundHandlerConfig{}
 	for _, p := range plan.Profiles {
 		if p.External != nil {
@@ -104,6 +112,9 @@ func (m *Manager) applyEgressRuntime(plan EgressPlan, checkOnly bool, state *egr
 		var config conf.OutboundDetourConfig
 		if json.Unmarshal(p.Config, &config) != nil || !supportedEgressProtocol(config.Protocol) {
 			return errors.New("unsupported egress configuration")
+		}
+		if transitProfiles[p.ID] && (config.Protocol != "shadowsocks" || p.Secret == nil || p.Secret.RouteID != p.ID || p.Principal != nil || p.External != nil) {
+			return errors.New("transit requires a scoped encrypted next-hop credential")
 		}
 		// Reject chaining to arbitrary tags and caller-controlled handler identity.
 		if config.Tag != "" || config.ProxySettings != nil {

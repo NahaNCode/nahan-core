@@ -463,6 +463,15 @@ func (c *Controller) addNewTag(newNodeInfo *api.NodeInfo) (err error) {
 		if err != nil {
 			return err
 		}
+		dispatcher := c.server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher)
+		if dispatcher.TransitRequired(c.Tag) && !newNodeInfo.Transit {
+			return fmt.Errorf("transit input role cannot be downgraded in place")
+		}
+		if newNodeInfo.Transit {
+			if err = dispatcher.RequireTransit(c.Tag); err != nil {
+				return err
+			}
+		}
 		err = c.addInbound(inboundConfig)
 		if err != nil {
 			return err

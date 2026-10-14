@@ -26,4 +26,26 @@ func TestManagedInfrastructureShadowsocksProfile(t *testing.T) {
 	if node.NodeType != "Shadowsocks" || node.ServerKey != password || node.CypherMethod != "2022-blake3-aes-128-gcm" || node.ListenIP != "10.0.0.2" {
 		t.Fatal("SS endpoint changed")
 	}
+	s.EntryRole = "transit"
+	if _, err = c.parseEntryProfile(s); err == nil {
+		t.Fatal("customer input accepted as transit")
+	}
+	s.Infrastructure = true
+	node, err = c.parseEntryProfile(s)
+	if err != nil || !node.Transit {
+		t.Fatal("explicit transit role was lost", err)
+	}
+	s.EntryRole = "exit"
+	node, err = c.parseEntryProfile(s)
+	if err != nil || node.Transit {
+		t.Fatal("exit role became transit", err)
+	}
+	s.EntryRole = "unknown"
+	if _, err = c.parseEntryProfile(s); err == nil {
+		t.Fatal("unsupported role accepted")
+	}
+	s.EntryRole = "customer"
+	if _, err = c.parseEntryProfile(s); err == nil {
+		t.Fatal("infrastructure input claimed customer role")
+	}
 }

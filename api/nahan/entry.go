@@ -41,6 +41,15 @@ func (c *APIClient) parseEntryProfile(server *serverConfig) (*api.NodeInfo, erro
 	if kind == "" {
 		return nil, errors.New("managed service protocol unsupported")
 	}
+	if server.EntryRole != "" && server.EntryRole != "customer" && server.EntryRole != "exit" && server.EntryRole != "transit" {
+		return nil, errors.New("unsupported managed entry role")
+	}
+	if (server.EntryRole == "transit" || server.EntryRole == "exit") && (p.Protocol != "shadowsocks" || !server.Infrastructure) {
+		return nil, errors.New("transit and exit roles require a managed infrastructure listener")
+	}
+	if server.EntryRole == "customer" && server.Infrastructure {
+		return nil, errors.New("infrastructure listener cannot claim customer role")
+	}
 	network := p.Stream.Network
 	if p.Stream.Method != "" {
 		network = p.Stream.Method
@@ -48,7 +57,7 @@ func (c *APIClient) parseEntryProfile(server *serverConfig) (*api.NodeInfo, erro
 	if network == "" {
 		network = "raw"
 	}
-	return &api.NodeInfo{NodeType: kind, NodeID: c.NodeID, Port: strconv.Itoa(p.Port), ListenIP: p.Listen, Address: server.Address, Transport: network, TLSType: p.Stream.Security, CertMode: "none", Flow: p.Settings.Flow, CypherMethod: p.Settings.Method, ServerKey: p.Settings.Password, InboundProfile: resolved}, nil
+	return &api.NodeInfo{Transit: server.EntryRole == "transit", NodeType: kind, NodeID: c.NodeID, Port: strconv.Itoa(p.Port), ListenIP: p.Listen, Address: server.Address, Transport: network, TLSType: p.Stream.Security, CertMode: "none", Flow: p.Settings.Flow, CypherMethod: p.Settings.Method, ServerKey: p.Settings.Password, InboundProfile: resolved}, nil
 }
 
 // The node snapshot is pinned to a manifest revision, while service eligibility
