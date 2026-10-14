@@ -42,6 +42,45 @@ func TestCatalogRequiresPinnedSignatureAndFreshCompleteAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalPanelProxyRejectsRemoteOrCredentialedRoutes(t *testing.T) {
+	for _, address := range []string{"", "socks5://127.0.0.1:1080", "socks5h://[::1]:1080", "http://127.0.0.1:8080"} {
+		if _, err := LocalPanelProxy(address); err != nil {
+			t.Fatalf("local proxy rejected: %v", err)
+		}
+	}
+	for _, address := range []string{"socks5://example.org:1080", "socks5://user:secret@127.0.0.1:1080", "http://127.0.0.1:8080/path", "http://127.0.0.1", "https://127.0.0.1:443", "socks5://localhost:1080"} {
+		if _, err := LocalPanelProxy(address); err == nil {
+			t.Fatal("unsafe proxy accepted")
+		}
+	}
+}
+
+func TestDownloadReusesOnlyExactRunningExecutable(t *testing.T) {
+	data, err := os.ReadFile("/proc/self/exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	asset := Asset{SHA256: hex.EncodeToString(digest[:]), Size: int64(len(data))}
+	path := filepath.Join(t.TempDir(), "candidate")
+	e := &Engine{}
+	if err := e.download(context.Background(), asset, path); err != nil {
+		t.Fatal(err)
+	}
+	if actual, _ := Hash(path); actual != asset.SHA256 {
+		t.Fatal("candidate differs from verified executable")
+	}
+	asset.Size++
+	if err := e.download(context.Background(), asset, path); err == nil {
+		t.Fatal("incorrect signed size accepted")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := e.download(ctx, asset, path); err == nil {
+		t.Fatal("cancelled download accepted")
+	}
+}
 func fixture(t *testing.T) (*Engine, Request, *int) {
 	t.Helper()
 	dir := t.TempDir()

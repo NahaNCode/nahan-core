@@ -67,7 +67,7 @@ The separate NahaN panel is not included in this repository.
   revocation, 10 Mbps/three-IP limits and encrypted browser delivery.
 
 Not all engine protocols have managed adapters. General customer migration,
-GRE management, automatic binary upgrades, imported-certificate renewal and
+GRE management, container binary upgrades, imported-certificate renewal and
 complete production provisioning remain incomplete. Engine restarts revoke
 temporary tests. Example IPs/URLs are placeholders, not working demo servers.
 

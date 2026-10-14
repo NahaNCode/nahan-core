@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -85,6 +86,11 @@ func init() {
 			return err
 		}
 		p := updater.Profile{PanelURL: config.GetString("ControlPlane.ApiHost"), KeyFile: keyFile, CAFile: config.GetString("ControlPlane.CAFile"), ServerName: config.GetString("ControlPlane.ServerName"), CoreID: id, Unit: unit, Binary: binary, Config: cfgFile, HeartbeatFile: filepath.Join(filepath.Dir(keyFile), "update-heartbeat-"+id+".json"), StateDir: filepath.Join("/var/lib/nahan-core-updater", id), Mode: mode, ComposeFile: compose, ComposeService: composeService, ImageFile: imageFile, ImageRepository: "ghcr.io/nahancode/nahan-core"}
+		proxy, err := discoverPanelProxy(cmd.Context(), unit)
+		if err != nil {
+			return err
+		}
+		p.PanelProxy = proxy
 		if mode == "docker" {
 			p.CoreUID = 10001
 		} else {
@@ -251,6 +257,28 @@ func exclusiveBinary(binary string) error {
 	}
 	return nil
 }
+
+func discoverPanelProxy(ctx context.Context, unit string) (string, error) {
+	data, err := exec.CommandContext(ctx, "systemctl", "show", unit, "--property=MainPID", "--value").Output()
+	pid := strings.TrimSpace(string(data))
+	if err != nil || !regexp.MustCompile(`^[1-9][0-9]{0,9}$`).MatchString(pid) {
+		return "", errors.New("core process unavailable")
+	}
+	environment, err := os.ReadFile(filepath.Join("/proc", pid, "environ"))
+	if err != nil {
+		return "", errors.New("core environment unavailable")
+	}
+	for _, variable := range strings.Split(string(environment), "\x00") {
+		key, value, ok := strings.Cut(variable, "=")
+		if ok && (key == "HTTPS_PROXY" || key == "https_proxy") && value != "" {
+			if _, err := updater.LocalPanelProxy(value); err != nil {
+				return "", err
+			}
+			return value, nil
+		}
+	}
+	return "", nil
+}
 func discoverCore(ctx context.Context, unit string) (string, string, error) {
 	if !regexp.MustCompile(`^[a-zA-Z0-9@_.-]+\.service$`).MatchString(unit) {
 		return "", "", errors.New("select a single core service with --service")
@@ -357,6 +385,12 @@ func cliUpdate(cmd *cobra.Command, path, core, action string, yes bool) error {
 	}
 	if action == "check" {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"coreId": p.CoreID, "currentVersion": receipt.Version, "currentDigest": receipt.Digest, "release": release})
+	}
+	if action != "rollback" {
+		if asset, ok := release.Assets["linux-"+runtime.GOARCH]; ok && asset.SHA256 == receipt.Digest {
+			fmt.Fprintln(cmd.OutOrStdout(), "Already at "+release.Version+"; no restart required.")
+			return nil
+		}
 	}
 	if os.Geteuid() != 0 {
 		return errors.New("upgrade requires root")

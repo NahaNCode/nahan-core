@@ -2,6 +2,8 @@ package update
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +26,7 @@ type Profile struct {
 	KeyFile         string `json:"keyFile,omitempty"`
 	CAFile          string `json:"caFile,omitempty"`
 	ServerName      string `json:"serverName,omitempty"`
+	PanelProxy      string `json:"panelProxy,omitempty"`
 	CoreID          string `json:"coreId"`
 	Unit            string `json:"unit"`
 	Binary          string `json:"binary"`
@@ -77,6 +80,9 @@ type Engine struct {
 var UUIDPattern = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
 func (p Profile) Validate() error {
+	if _, err := LocalPanelProxy(p.PanelProxy); err != nil {
+		return err
+	}
 	if !UUIDPattern.MatchString(p.CoreID) || !regexp.MustCompile(`^[a-zA-Z0-9@_.-]+\.service$`).MatchString(p.Unit) || !filepath.IsAbs(p.Config) || !filepath.IsAbs(p.StateDir) || !filepath.IsAbs(p.HeartbeatFile) {
 		return errors.New("invalid registered update profile")
 	}
@@ -249,6 +255,19 @@ func (e *Engine) fetch(ctx context.Context) (Release, error) {
 func (e *Engine) download(ctx context.Context, a Asset, path string) error {
 	if e.Download != nil {
 		return e.Download(ctx, a, path)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	// Bootstrap installs a verified helper; reuse its exact signed bytes rather than downloading twice.
+	if RunningDigest() == a.SHA256 {
+		data, err := os.ReadFile("/proc/self/exe")
+		if err == nil && int64(len(data)) == a.Size {
+			digest := sha256.Sum256(data)
+			if hex.EncodeToString(digest[:]) == a.SHA256 {
+				return AtomicBytes(path, data, 0755)
+			}
+		}
 	}
 	return Download(ctx, a, path)
 }

@@ -88,5 +88,42 @@ Back up configuration and core-local secrets outside Git. Verify the candidate
 checksum and compatibility, retain the previous binary, and restart only the
 intended NahaN unit. Restart interrupts the engine and revokes temporary tests.
 On failure, restore the old binary and verify both heartbeat and client traffic.
-Signed automatic upgrades and automatic imported-certificate renewal are not
-provided by this release.
+Native systemd installations can register the signed updater once using a
+verified official release binary:
+
+```sh
+sudo ./NahaN update register --service nahan.service
+sudo nahan-core update check
+sudo nahan-core update
+sudo nahan-core update status
+sudo nahan-core update rollback
+```
+
+Registration discovers the existing core and does not create a panel record or
+restart the core. `--core UUID` selects one of several registered services.
+Only an explicitly confirmed upgrade restarts its selected unit. Preparation
+checks the signed catalog, exact SHA256, source identity, configuration and
+panel revision; activation retains a protected backup and restores it if health
+verification fails. A repeated update of the exact current build is a no-op.
+The panel checks new releases automatically and requires explicit activation.
+
+If the existing core uses an unauthenticated loopback HTTPS proxy (HTTP CONNECT
+or SOCKS5), registration preserves that route for authenticated updater reports
+while retaining TLS identity verification. Remote or credentialed proxies are
+not imported. Re-register after changing the service's route or installation.
+Binary ancestors must be root-owned and non-writable by other users. Configuration
+and credential files may belong to the registered service user. Shared binaries
+must first be separated deliberately; the updater will not change a second unit.
+
+Container upgrades and imported-certificate renewal are not automated here.
+Do not paste credentials into command arguments or use unreviewed `curl | bash`.
+
+## Automatic host identification
+
+With host agent 0.4 or newer, a native core requests a short-lived signed local
+attestation. The panel verifies its registered agent key and automatically links
+the existing core to that host. This does not create, install or move a core.
+Non-root services use the restricted root helper after updater registration;
+never make the agent socket world-accessible. A conflicting manual placement is
+reported for review instead of silently overwritten. Socket access failure does
+not stop regular core communication.
