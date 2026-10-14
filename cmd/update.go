@@ -170,7 +170,7 @@ func init() {
 			return err
 		}
 		service := "nahan-core-updater-" + id + ".service"
-		definition := "[Unit]\nDescription=NahaN restricted core updater\nAfter=network-online.target\n[Service]\nExecStart=" + strconv.Quote(helper) + " update serve --profile " + strconv.Quote(profile) + "\nUser=root\nUMask=0077\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\nReadWritePaths=" + strconv.Quote(filepath.Dir(p.Binary)) + " /var/lib/nahan-core-updater /run/nahan-core-updater\n[Install]\nWantedBy=multi-user.target\n"
+		definition := "[Unit]\nDescription=NahaN restricted core updater\nAfter=network-online.target\n[Service]\nExecStart=" + strconv.Quote(helper) + " update serve --profile " + strconv.Quote(profile) + "\nUser=root\nUMask=0077\nRuntimeDirectory=nahan-core-updater\nRuntimeDirectoryMode=0711\nRuntimeDirectoryPreserve=yes\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\nReadWritePaths=" + strconv.Quote(filepath.Dir(p.Binary)) + " /var/lib/nahan-core-updater /run/nahan-core-updater\n[Install]\nWantedBy=multi-user.target\n"
 		for _, directory := range []string{p.StateDir, "/run/nahan-core-updater"} {
 			if err = os.MkdirAll(directory, 0700); err != nil {
 				return err
