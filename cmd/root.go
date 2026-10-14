@@ -130,6 +130,7 @@ func run() error {
 			if !report.Enabled {
 				managerConfig.EgressExpiresAt = time.Now().Add(-time.Second)
 				m.RestrictManagedEgress(managerConfig.EgressExpiresAt)
+				m.RestrictExitRoutes(managerConfig.EgressExpiresAt)
 			}
 		}
 		panel.RoutingPolicyRefresh()
@@ -145,6 +146,9 @@ func run() error {
 		}
 		if err = restoreEgress(panel, managerConfig); err != nil {
 			return fmt.Errorf("egress state restore failed")
+		}
+		if err = restoreExitRouting(panel, managerConfig); err != nil {
+			return fmt.Errorf("destination exit state restore failed")
 		}
 		panel.RoutingPolicyRefresh()
 		managerConfig.ConnectionPolicy, err = restorePolicy(panel)
@@ -219,6 +223,9 @@ func run() error {
 		if err := syncEgress(panel, m, managerConfig); err != nil {
 			log.Warn("Egress synchronization unavailable")
 		}
+		if err := syncExitRouting(panel, m, managerConfig); err != nil {
+			log.Warn("Destination exit synchronization unavailable")
+		}
 		if err := panel.Heartbeat(context.Background(), version, manifest, startupError); err != nil {
 			log.Warn(err)
 		}
@@ -285,6 +292,9 @@ func run() error {
 						}
 					}
 				}
+			}
+			if err := syncExitRouting(panel, m, managerConfig); err != nil {
+				log.Warn("Destination exit synchronization unavailable")
 			}
 			if err := panel.Heartbeat(context.Background(), version, manifest, lastApplyError); err != nil {
 				log.Warn(err)

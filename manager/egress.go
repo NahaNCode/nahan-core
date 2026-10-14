@@ -62,19 +62,26 @@ func (m *Manager) CheckEgress(plan EgressPlan) error {
 }
 
 func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
-	m.egress.Lock()
-	defer m.egress.Unlock()
+	return m.applyEgressRuntime(plan, checkOnly, &m.egress, nil)
+}
+
+func (m *Manager) applyEgressRuntime(plan EgressPlan, checkOnly bool, state *egressRuntime, registry *egress.Registry) error {
+	state.Lock()
+	defer state.Unlock()
 	if m.Server == nil {
 		return errors.New("core is not running")
 	}
-	if m.egress.server != m.Server {
-		m.egress.server, m.egress.tags = m.Server, make(map[string]bool)
+	if state.server != m.Server {
+		state.server, state.tags = m.Server, make(map[string]bool)
 	}
 	if len(plan.Profiles) > 256 {
 		return errors.New("too many egress profiles")
 	}
 	obm := m.Server.GetFeature(outbound.ManagerType()).(outbound.Manager)
 	dispatcher := m.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher)
+	if registry == nil {
+		registry = &dispatcher.Egress
+	}
 	aliases := map[string]string{}
 	configs := map[string]*core.OutboundHandlerConfig{}
 	for _, p := range plan.Profiles {
@@ -149,7 +156,11 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 			return errors.New("invalid egress configuration")
 		}
 		hash := sha256.Sum256(canonical)
-		tag := "nahan-egress-" + hex.EncodeToString(hash[:])
+		prefix := "nahan-egress-"
+		if state == &m.exitEgress {
+			prefix = "nahan-exit-"
+		}
+		tag := prefix + hex.EncodeToString(hash[:])
 		config.Tag = tag
 		built, err := config.Build()
 		if err != nil {
@@ -169,7 +180,7 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 	if _, _, err := egress.Canonical(snapshot); err != nil {
 		return err
 	}
-	if err := dispatcher.Egress.Validate(snapshot); err != nil {
+	if err := registry.Validate(snapshot); err != nil {
 		return err
 	}
 	for _, binding := range snapshot.Bindings {
@@ -181,20 +192,20 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 		return nil
 	}
 	// Never retire a handler selected by the candidate or held by a live stream.
-	for tag := range m.egress.tags {
-		if configs[tag] == nil && dispatcher.Egress.CanRetire(tag) {
+	for tag := range state.tags {
+		if configs[tag] == nil && registry.CanRetire(tag) {
 			if obm.RemoveHandler(context.Background(), tag) == nil {
-				delete(m.egress.tags, tag)
+				delete(state.tags, tag)
 			}
 		}
 	}
 	newCount := 0
 	for tag := range configs {
-		if !m.egress.tags[tag] {
+		if !state.tags[tag] {
 			newCount++
 		}
 	}
-	if len(m.egress.tags)+newCount > 512 {
+	if len(state.tags)+newCount > 512 {
 		return errors.New("egress drain capacity reached")
 	}
 	created := []string{}
@@ -204,7 +215,7 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 		}
 	}
 	for tag, config := range configs {
-		if m.egress.tags[tag] {
+		if state.tags[tag] {
 			continue
 		}
 		if obm.GetHandler(tag) != nil {
@@ -217,17 +228,17 @@ func (m *Manager) applyEgress(plan EgressPlan, checkOnly bool) error {
 		}
 		created = append(created, tag)
 	}
-	if err := dispatcher.Egress.Replace(snapshot, func(tag string) bool { return obm.GetHandler(tag) != nil }); err != nil {
+	if err := registry.Replace(snapshot, func(tag string) bool { return obm.GetHandler(tag) != nil }); err != nil {
 		rollback()
 		return err
 	}
 	for _, tag := range created {
-		m.egress.tags[tag] = true
+		state.tags[tag] = true
 	}
-	for tag := range m.egress.tags {
-		if configs[tag] == nil && dispatcher.Egress.CanRetire(tag) {
+	for tag := range state.tags {
+		if configs[tag] == nil && registry.CanRetire(tag) {
 			if obm.RemoveHandler(context.Background(), tag) == nil {
-				delete(m.egress.tags, tag)
+				delete(state.tags, tag)
 			}
 		}
 	}

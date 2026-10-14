@@ -7,6 +7,7 @@ import (
 	"github.com/NahaNCode/nahan-core/utility/connectionpolicy"
 	"github.com/NahaNCode/nahan-core/utility/controlplane"
 	"github.com/NahaNCode/nahan-core/utility/egress"
+	"github.com/NahaNCode/nahan-core/utility/exitroute"
 	"time"
 )
 
@@ -16,6 +17,8 @@ type Config struct {
 	ResolveEgressPrincipal  func(egress.PrincipalBinding) (egress.PrincipalCredential, error) `mapstructure:"-"`
 	ResolveEgressCredential func(egress.CredentialBinding) (egress.SSCredential, error)       `mapstructure:"-"`
 	RestoredEgress          *EgressPlan                                                       `mapstructure:"-"`
+	RestoredExitRoutes      *exitroute.Snapshot                                               `mapstructure:"-"`
+	ExitRoutesExpiresAt     time.Time                                                         `mapstructure:"-"`
 	EgressExpiresAt         time.Time                                                         `mapstructure:"-"`
 	ConnectionPolicy        connectionpolicy.Snapshot                                         `mapstructure:"-"`
 	ControlPlane            *controlplane.Config                                              `mapstructure:"ControlPlane"`
