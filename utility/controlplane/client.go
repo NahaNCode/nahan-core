@@ -32,10 +32,12 @@ type Manifest struct {
 	} `json:"nodes"`
 }
 type Client struct {
-	SSTrial func(json.RawMessage, string, string) (entryprofile.SealedResult, error)
-	Config  *Config
-	Key     string
-	http    *http.Client
+	PrincipalDurable   bool
+	PrincipalProvision func(json.RawMessage, string) (entryprofile.SealedResult, error)
+	SSTrial            func(json.RawMessage, string, string) (entryprofile.SealedResult, error)
+	Config             *Config
+	Key                string
+	http               *http.Client
 }
 
 var ErrUnauthorized = errors.New("core authentication revoked")
@@ -81,6 +83,7 @@ func (c *Client) request(ctx context.Context, method, resource string, body any,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Nahan-Policy-Runtime", "2")
+	req.Header.Set("X-Nahan-Egress-Runtime", "1")
 	res, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("control plane unavailable: %w", err)

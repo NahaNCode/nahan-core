@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -23,6 +25,7 @@ import (
 	"github.com/NahaNCode/nahan-core/manager"
 	"github.com/NahaNCode/nahan-core/service/controller"
 	"github.com/NahaNCode/nahan-core/utility/controlplane"
+	"github.com/NahaNCode/nahan-core/utility/entryprofile"
 )
 
 var (
@@ -109,6 +112,18 @@ func run() error {
 			return err
 		}
 		panel.SSTrial = m.SSTrial
+		managerConfig.PrincipalStore = manager.NewPrincipalStore(filepath.Join(filepath.Dir(panel.Config.KeyFile), "egress-destination-principals"), panel.Config.CoreID, panel.Key)
+		panel.PrincipalDurable = true
+		panel.PrincipalProvision = func(input json.RawMessage, coreID string) (entryprofile.SealedResult, error) {
+			var request manager.PrincipalRequest
+			if len(input) > 65536 || json.Unmarshal(input, &request) != nil {
+				return entryprofile.SealedResult{}, errors.New("invalid principal request")
+			}
+			return m.ProvisionEgressPrincipal(coreID, request)
+		}
+		if err = restoreEgress(panel, managerConfig); err != nil {
+			return fmt.Errorf("egress state restore failed")
+		}
 		managerConfig.ConnectionPolicy, err = restorePolicy(panel)
 		if err != nil {
 			return fmt.Errorf("connection policy restore failed")
@@ -173,6 +188,9 @@ func run() error {
 	}
 	defer func() { m.Close() }()
 	if panel != nil {
+		if err := syncEgress(panel, m, managerConfig); err != nil {
+			log.Warn("Egress synchronization unavailable")
+		}
 		if err := panel.Heartbeat(context.Background(), codename+" "+version, manifest, startupError); err != nil {
 			log.Warn(err)
 		}
@@ -244,6 +262,9 @@ func run() error {
 			}
 			if err := syncPolicy(panel, m, managerConfig); err != nil {
 				log.Warn("Connection policy synchronization unavailable")
+			}
+			if err := syncEgress(panel, m, managerConfig); err != nil {
+				log.Warn("Egress synchronization unavailable")
 			}
 		}
 	}

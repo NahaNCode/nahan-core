@@ -5,18 +5,25 @@ import (
 	"github.com/NahaNCode/nahan-core/service/controller"
 	"github.com/NahaNCode/nahan-core/utility/connectionpolicy"
 	"github.com/NahaNCode/nahan-core/utility/controlplane"
+	"github.com/NahaNCode/nahan-core/utility/egress"
+	"time"
 )
 
 type Config struct {
-	ConnectionPolicy   connectionpolicy.Snapshot `mapstructure:"-"`
-	ControlPlane       *controlplane.Config      `mapstructure:"ControlPlane"`
-	LogConfig          *LogConfig                `mapstructure:"Log"`
-	DnsConfigPath      string                    `mapstructure:"DnsConfigPath"`
-	InboundConfigPath  string                    `mapstructure:"InboundConfigPath"`
-	OutboundConfigPath string                    `mapstructure:"OutboundConfigPath"`
-	RouteConfigPath    string                    `mapstructure:"RouteConfigPath"`
-	ConnectionConfig   *ConnectionConfig         `mapstructure:"ConnectionConfig"`
-	NodesConfig        []*NodesConfig            `mapstructure:"Nodes"`
+	PrincipalStore          *PrincipalStore                                                   `mapstructure:"-"`
+	ResolveEgressPrincipal  func(egress.PrincipalBinding) (egress.PrincipalCredential, error) `mapstructure:"-"`
+	ResolveEgressCredential func(egress.CredentialBinding) (egress.SSCredential, error)       `mapstructure:"-"`
+	RestoredEgress          *EgressPlan                                                       `mapstructure:"-"`
+	EgressExpiresAt         time.Time                                                         `mapstructure:"-"`
+	ConnectionPolicy        connectionpolicy.Snapshot                                         `mapstructure:"-"`
+	ControlPlane            *controlplane.Config                                              `mapstructure:"ControlPlane"`
+	LogConfig               *LogConfig                                                        `mapstructure:"Log"`
+	DnsConfigPath           string                                                            `mapstructure:"DnsConfigPath"`
+	InboundConfigPath       string                                                            `mapstructure:"InboundConfigPath"`
+	OutboundConfigPath      string                                                            `mapstructure:"OutboundConfigPath"`
+	RouteConfigPath         string                                                            `mapstructure:"RouteConfigPath"`
+	ConnectionConfig        *ConnectionConfig                                                 `mapstructure:"ConnectionConfig"`
+	NodesConfig             []*NodesConfig                                                    `mapstructure:"Nodes"`
 }
 
 type NodesConfig struct {

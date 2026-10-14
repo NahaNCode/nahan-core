@@ -27,6 +27,7 @@ import (
 	"github.com/xtls/xray-core/transport/pipe"
 
 	"github.com/NahaNCode/nahan-core/utility/connectionpolicy"
+	"github.com/NahaNCode/nahan-core/utility/egress"
 	"github.com/NahaNCode/nahan-core/utility/limiter"
 	"github.com/NahaNCode/nahan-core/utility/rule"
 )
@@ -105,6 +106,7 @@ func (r *cachedReader) Interrupt() {
 // DefaultDispatcher is a default implementation of Dispatcher.
 type DefaultDispatcher struct {
 	ConnectionPolicy connectionpolicy.Policy
+	Egress           egress.Registry
 	sessionMu        sync.Mutex
 	sessions         map[string]map[*transport.Link]func()
 	revoked          map[string]bool
@@ -581,6 +583,7 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 		return
 	}
 	inTag := routingLink.GetInboundTag()
+	managedTag, managed, expired := d.Egress.Lookup(inTag)
 	isPickRoute := 0
 	if forcedOutboundTag := session.GetForcedOutboundTagFromContext(ctx); forcedOutboundTag != "" {
 		ctx = session.SetForcedOutboundTagToContext(ctx, "")
@@ -594,6 +597,19 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 			common.Interrupt(link.Reader)
 			return
 		}
+	} else if managed {
+		if expired {
+			common.Close(link.Writer)
+			common.Interrupt(link.Reader)
+			return
+		}
+		handler = d.ohm.GetHandler(managedTag)
+		if handler == nil {
+			common.Close(link.Writer)
+			common.Interrupt(link.Reader)
+			return
+		}
+		isPickRoute = 2
 	} else if d.router != nil {
 		if route, err := d.router.PickRoute(routingLink); err == nil {
 			outTag := route.GetOutboundTag()

@@ -59,6 +59,22 @@ func generate() error {
 		{"proxy/shadowsocks_2022/outbound.go", "if session.TimeoutOnlyFromContext(ctx) {", "defer connection.Close()\n\n\tif session.TimeoutOnlyFromContext(ctx) {"},
 		{"proxy/shadowsocks_2022/outbound.go", "serverConn := o.method.DialPacketConn(connection)", "if wrapper, ok := packetConn.(*singbridge.PacketConnWrapper); ok {\n\t\t\tdefer wrapper.T.SetTimeout(0)\n\t\t}\n\n\t\tserverConn := o.method.DialPacketConn(connection)"},
 	}
+	// Keep live pointers GC-visible and reject incompatible TLS connection layouts.
+	for _, file := range []string{"proxy/vless/inbound/inbound.go", "proxy/vless/outbound/outbound.go"} {
+		for _, change := range []struct{ old, replacement string }{
+			{"var p uintptr", "var p unsafe.Pointer"},
+			{"p = uintptr(unsafe.Pointer(commonConn))", "p = unsafe.Pointer(commonConn)"},
+			{"p = uintptr(unsafe.Pointer(tlsConn.Conn))", "p = unsafe.Pointer(tlsConn.Conn)"},
+			{"p = uintptr(unsafe.Pointer(realityConn.Conn))", "p = unsafe.Pointer(realityConn.Conn)"},
+			{"i, _ := t.FieldByName(\"input\")", "i, inputOK := t.FieldByName(\"input\")"},
+			{"r, _ := t.FieldByName(\"rawInput\")", "r, rawOK := t.FieldByName(\"rawInput\")\n if !inputOK || !rawOK || i.Type != reflect.TypeOf(bytes.Reader{}) || r.Type != reflect.TypeOf(bytes.Buffer{}) { return errors.New(\"XTLS connection layout not supported\").AtWarning() }"},
+			{"unsafe.Pointer(p + i.Offset)", "unsafe.Add(p, i.Offset)"},
+			{"unsafe.Pointer(p + r.Offset)", "unsafe.Add(p, r.Offset)"},
+		} {
+			changes = append(changes, struct{ file, old, replacement string }{file, change.old, change.replacement})
+		}
+	}
+	changes = append(changes, struct{ file, old, replacement string }{"proxy/vless/outbound/outbound.go", "p = uintptr(unsafe.Pointer(utlsConn.Conn))", "p = unsafe.Pointer(utlsConn.Conn)"})
 	patchedModule := filepath.Join(dir, "xray")
 	err = filepath.WalkDir(module.Dir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {

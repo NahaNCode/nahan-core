@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/NahaNCode/nahan-core/utility/egress"
 	"github.com/NahaNCode/nahan-core/utility/entryprofile"
 	"github.com/xtls/xray-core/core"
 	"path/filepath"
@@ -38,6 +39,30 @@ func (c *Client) ProcessJobs(ctx context.Context) error {
 				result["digest"] = built.Digest
 			} else {
 				result["code"] = "secret_resolution_failed"
+			}
+		} else if job.Kind == "egress-ss-export" {
+			var payload struct {
+				Profile   json.RawMessage        `json:"profile"`
+				PublicKey string                 `json:"publicKey"`
+				Scope     egress.CredentialScope `json:"scope"`
+			}
+			if json.Unmarshal(job.Payload, &payload) == nil {
+				sealed, err := egress.ExportCredential(payload.Profile, c.SecretDirectory(), c.Config.CoreID, payload.PublicKey, payload.Scope)
+				if err == nil {
+					result["valid"] = true
+					result["code"] = ""
+					result["ciphertext"] = sealed.Ciphertext
+					result["wrappedKey"] = sealed.WrappedKey
+					result["nonce"] = sealed.Nonce
+				}
+			}
+		} else if job.Kind == "egress-principal" {
+			if c.PrincipalProvision != nil {
+				sealed, err := c.PrincipalProvision(job.Payload, c.Config.CoreID)
+				if err == nil {
+					result["valid"], result["code"] = true, ""
+					result["ciphertext"], result["wrappedKey"], result["nonce"] = sealed.Ciphertext, sealed.WrappedKey, sealed.Nonce
+				}
 			}
 		} else if job.Kind == "ss-test-config" {
 			var sealed entryprofile.SealedResult
