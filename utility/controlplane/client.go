@@ -21,13 +21,14 @@ import (
 )
 
 type Config struct {
-	HostSocket       string `mapstructure:"HostSocket"`
-	HasCustomRouting bool   `mapstructure:"-"`
-	APIHost          string `mapstructure:"ApiHost"`
-	CoreID           string `mapstructure:"CoreID"`
-	KeyFile          string `mapstructure:"KeyFile"`
-	CAFile           string `mapstructure:"CAFile"`
-	ServerName       string `mapstructure:"ServerName"`
+	AllowManagedEgress bool   `mapstructure:"AllowManagedEgress"`
+	HostSocket         string `mapstructure:"HostSocket"`
+	HasCustomRouting   bool   `mapstructure:"-"`
+	APIHost            string `mapstructure:"ApiHost"`
+	CoreID             string `mapstructure:"CoreID"`
+	KeyFile            string `mapstructure:"KeyFile"`
+	CAFile             string `mapstructure:"CAFile"`
+	ServerName         string `mapstructure:"ServerName"`
 }
 type Manifest struct {
 	Revision int64 `json:"revision"`

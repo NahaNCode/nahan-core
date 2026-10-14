@@ -120,6 +120,18 @@ Do not paste credentials into command arguments or use unreviewed `curl | bash`.
 
 ## Automatic host identification
 
+### Existing routing
+
+Custom outbound inventories remain compatible with managed egress. Existing
+routing rules require an explicit `ControlPlane.AllowManagedEgress: true`
+acknowledgement on the host. A published managed binding takes precedence for
+its selected inbound, including over existing routing rules; unselected inbounds
+continue to use the existing router. Do not enable this option without reviewing
+the rules that the selected inbounds previously relied on. Custom DNS and custom
+inbound files remain excluded. No routing files are deleted or rewritten by this
+option. Withdrawing the managed binding returns its inbound to the existing
+router, not necessarily a direct Internet route.
+
 With host agent 0.4 or newer, a native core requests a short-lived signed local
 attestation. The panel verifies its registered agent key and automatically links
 the existing core to that host. This does not create, install or move a core.
