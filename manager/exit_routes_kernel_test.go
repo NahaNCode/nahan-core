@@ -65,6 +65,28 @@ func TestDestinationExitSharedSSRealSockets(t *testing.T) {
 		{ID: principalSource, Mode: "shared", Inbound: input.Tag, SourceIP: "10.241.88.1", LocalIP: "10.241.88.2", ExitIP: "192.0.2.146", Active: true},
 		{ID: principalTarget, Mode: "shared", Inbound: input.Tag, SourceIP: "10.241.87.1", LocalIP: "10.241.87.2", ExitIP: "192.0.2.197", Active: true},
 	}}
+	clients := append([]exitroute.Rule(nil), s.Rules...)
+	independent := os.Getenv("NAHAN_EXIT_INDEPENDENT_QA") == "1"
+	if independent {
+		input.Tag = "Shadowsocks_31007_18"
+		var extra conf.InboundDetourConfig
+		if err = json.Unmarshal([]byte(strings.ReplaceAll(strings.ReplaceAll(raw, "31006", "31007"), "_17", "_18")), &extra); err != nil {
+			t.Fatal(err)
+		}
+		built, err := extra.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = core.AddInboundHandler(m.Server, built); err != nil {
+			t.Fatal(err)
+		}
+		for i := range s.Rules {
+			s.Rules[i].Mode = "independent"
+			s.Rules[i].SourceIP = ""
+			s.Rules[i].LocalIP = ""
+		}
+		s.Rules[1].Inbound = extra.Tag
+	}
 	if err = m.ApplyExitRoutes(s); err != nil {
 		t.Fatal(err)
 	}
@@ -98,12 +120,20 @@ func TestDestinationExitSharedSSRealSockets(t *testing.T) {
 			}
 			go func() {
 				defer conn.Close()
+				request := make([]byte, 2)
+				if _, err := io.ReadFull(conn, request); err != nil {
+					return
+				}
 				io.WriteString(conn, strings.Split(conn.RemoteAddr().String(), ":")[0]+"\n")
 			}()
 		}
 	}()
-	for _, r := range s.Rules {
-		cfgJSON, _ := json.Marshal(map[string]any{"outbounds": []any{map[string]any{"protocol": "shadowsocks", "sendThrough": r.SourceIP, "settings": map[string]any{"servers": []any{map[string]any{"address": r.LocalIP, "port": 31006, "method": "aes-128-gcm", "password": "disposable-qa-password"}}}}}})
+	for i, r := range clients {
+		port := 31006
+		if independent && i == 1 {
+			port = 31007
+		}
+		cfgJSON, _ := json.Marshal(map[string]any{"outbounds": []any{map[string]any{"protocol": "shadowsocks", "sendThrough": r.SourceIP, "settings": map[string]any{"servers": []any{map[string]any{"address": r.LocalIP, "port": port, "method": "aes-128-gcm", "password": "disposable-qa-password"}}}}}})
 		var cfg conf.Config
 		if err = json.Unmarshal(cfgJSON, &cfg); err != nil {
 			t.Fatal(err)
@@ -154,5 +184,5 @@ func TestDestinationExitSharedSSRealSockets(t *testing.T) {
 			t.Fatalf("UDP source %s expected %s observed %q: %v %v", r.SourceIP, r.ExitIP, response[:n], writeErr, readErr)
 		}
 	}
-	t.Log("PASS: TCP and UDP on one wildcard SS listener/port, two tunnel endpoint pairs, two observed Internet source IPs")
+	t.Logf("PASS: TCP and UDP, independent=%v, two observed Internet source IPs", independent)
 }
