@@ -23,9 +23,11 @@ the runtime; advanced VLESS encryption provisioning is explicitly unsupported.
 - The owner requests a transfer for the exact persisted route revision.
 - Both enabled cores must have fresh acknowledged manifests and pinned
   recipient identities. Non-SS provisioning requires principal runtime 1 or
-  newer at the source and staged-principal runtime 3 at the destination. Pending
-  staged jobs are withheld if the destination downgrades to a rotating runtime.
-- `egress-principal` jobs contain the destination handler tag, protocol, flow,
+  newer at the source and staged-principal runtime 4 at the destination. Pending
+  New candidates use the distinct `egress-principal-staged` opcode. Older
+  runtimes reject unknown opcodes rather than ignore a flag and rotate a live
+  identity. Runtime 4 forces staged semantics even if the payload flag is absent.
+- Principal jobs contain the destination handler tag, protocol, flow,
   source public key and route/source/target/revision/expiry scope. They never
   contain customer clients or destination TLS/REALITY private keys.
 - The destination verifies its actual handler protocol before adding a user.
@@ -53,18 +55,24 @@ under the owner-only key directory. Still-live identities are reinstalled on
 compatible existing handlers without extending deadlines. Revoked/expired
 records are not revived; wrong local keys, tampering and unsafe directory modes
 fail closed. New authorization revisions generate independent credentials.
-Runtime 3 staged requests use separate revision-scoped leases and encrypted
+Runtime 4 staged requests use separate revision-scoped leases and encrypted
 journal records. Preparing a candidate does not remove a still-live published
 identity, stop its renewal or overwrite its journal. Revocation addresses the
 exact revision. Legacy non-staged requests retain their explicit immediate
 rotation semantics; the backend no longer issues new candidate jobs to those
-old runtimes.
+  old runtimes.
+
+Deprecated queued rotating candidates are failed rather than retained in front
+of healthy work. Legacy renewal jobs remain eligible. Queue polling scans the
+bounded 20-job window and returns up to ten eligible jobs. Re-issuing a published
+principal revision is rejected; edit the draft to stage a new revision instead
+of extending the destination deadline ahead of its live source authorization.
 
 Principal runtime 2 advertises source monotonic renewal storage and destination
 durability. The backend renewal coordinator only acts on applied, published
 routes with fresh source/destination acknowledgements, exact published transfer
 and node bindings, unchanged recipient identity and runtime 2 or newer on both
-cores (runtime 3 required for staged destination identities). Renewals get independent
+cores (runtime 4 required for staged destination identities). Renewals get independent
 job IDs but deliver under the original transfer binding. Pending jobs are not
 duplicated, expiry is not revived, and old initial envelopes are suppressed after
 a completed renewal. Withdrawal stops renewal delivery. Published authorization

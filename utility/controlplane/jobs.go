@@ -56,9 +56,19 @@ func (c *Client) ProcessJobs(ctx context.Context) error {
 					result["nonce"] = sealed.Nonce
 				}
 			}
-		} else if job.Kind == "egress-principal" {
-			if c.PrincipalProvision != nil {
-				sealed, err := c.PrincipalProvision(job.Payload, c.Config.CoreID)
+		} else if job.Kind == "egress-principal" || job.Kind == "egress-principal-staged" {
+			payload := job.Payload
+			if job.Kind == "egress-principal-staged" {
+				var request map[string]json.RawMessage
+				if json.Unmarshal(payload, &request) == nil && request != nil {
+					request["staged"] = json.RawMessage(`true`)
+					payload, _ = json.Marshal(request)
+				} else {
+					payload = nil
+				}
+			}
+			if c.PrincipalProvision != nil && len(payload) > 0 {
+				sealed, err := c.PrincipalProvision(payload, c.Config.CoreID)
 				if err == nil {
 					result["valid"], result["code"] = true, ""
 					result["ciphertext"], result["wrappedKey"], result["nonce"] = sealed.Ciphertext, sealed.WrappedKey, sealed.Nonce

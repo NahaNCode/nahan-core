@@ -28,7 +28,7 @@ func (c *Client) SyncEgressCredentials(ctx context.Context) error {
 	if c.PrincipalProvision != nil {
 		principalRuntime = 1
 		if c.PrincipalDurable {
-			principalRuntime = 3
+			principalRuntime = 4
 		}
 	}
 	if err = c.request(ctx, "POST", "egress/identity", map[string]any{"publicKey": public, "principalRuntimeVersion": principalRuntime}, nil); err != nil {

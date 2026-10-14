@@ -53,7 +53,7 @@ func TestEgressPrincipalControlJobToEncryptedImportToRealOutbound(t *testing.T) 
 						w.WriteHeader(401)
 						return
 					}
-					json.NewEncoder(w).Encode([]map[string]any{{"id": transferID, "kind": "egress-principal", "payload": PrincipalRequest{Scope: scope, Tag: "qa-principal", Protocol: kind, PublicKey: public}}})
+					json.NewEncoder(w).Encode([]map[string]any{{"id": transferID, "kind": "egress-principal-staged", "payload": PrincipalRequest{Scope: scope, Tag: "qa-principal", Protocol: kind, PublicKey: public}}})
 				case "/api/core/v1/cores/" + principalTarget + "/jobs/" + transferID + "/result":
 					if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("t", 64) {
 						w.WriteHeader(401)
@@ -114,6 +114,9 @@ func TestEgressPrincipalControlJobToEncryptedImportToRealOutbound(t *testing.T) 
 					var r PrincipalRequest
 					if err := json.Unmarshal(input, &r); err != nil {
 						return entryprofile.SealedResult{}, err
+					}
+					if !r.Staged {
+						t.Error("staged opcode did not enforce revision isolation")
 					}
 					return m.ProvisionEgressPrincipal(coreID, r)
 				}
