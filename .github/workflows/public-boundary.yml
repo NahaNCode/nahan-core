@@ -8,3 +8,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sh deploy/check-public-boundary.sh
+      - run: node deploy/check-public-secrets.mjs
