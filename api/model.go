@@ -27,6 +27,7 @@ type Config struct {
 }
 
 type NodeInfo struct {
+	Transit              bool
 	InboundProfile       json.RawMessage `json:",omitempty"`
 	NodeType             string
 	NodeID               int
