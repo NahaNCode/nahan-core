@@ -106,7 +106,7 @@ func run() error {
 		if len(managerConfig.NodesConfig) > 0 {
 			template = managerConfig.NodesConfig[0].ControllerConfig
 		}
-		managerConfig.ControlPlane.HasCustomRouting = managerConfig.RouteConfigPath != "" || managerConfig.OutboundConfigPath != "" || managerConfig.DnsConfigPath != "" || managerConfig.InboundConfigPath != ""
+		managerConfig.ControlPlane.HasCustomRouting = incompatibleManagedRouting(managerConfig)
 		panel, err = controlplane.New(managerConfig.ControlPlane)
 		if err != nil {
 			return err
