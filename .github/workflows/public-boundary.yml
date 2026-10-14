@@ -1,0 +1,10 @@
+name: Public repository boundary
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh deploy/check-public-boundary.sh
