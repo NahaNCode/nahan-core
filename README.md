@@ -88,6 +88,7 @@ patches. The patch tool uses a temporary dependency copy, not the global cache.
 - [Managed control-plane protocol](docs/MANAGED-LAB.md)
 - [Advanced profiles](docs/advanced-entry-runtime.md)
 - [Connection policies](docs/connection-policy.md)
+- [Scoped routing consent and preserved DNS](docs/ROUTING-POLICY.md)
 - [Traffic outbox](docs/TRAFFIC-OUTBOX.md)
 - [Contributing](CONTRIBUTING.md) and [security reports](SECURITY.md)
 
