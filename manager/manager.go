@@ -26,11 +26,14 @@ import (
 
 // Manager Structure
 type Manager struct {
-	statusLock    sync.Mutex
-	managerConfig *Config
-	Server        *core.Instance
-	Service       []service.Service
-	Running       bool
+	egress            egressRuntime
+	principals        map[string]*principalLease
+	principalInstalls int
+	statusLock        sync.Mutex
+	managerConfig     *Config
+	Server            *core.Instance
+	Service           []service.Service
+	Running           bool
 }
 
 func New(managerConfig *Config) *Manager {
@@ -174,6 +177,13 @@ func (m *Manager) Start() {
 	}
 	m.Server = server
 
+	// Restore managed routes before any customer inbound is started.
+	if m.managerConfig.RestoredEgress != nil {
+		if err := m.ApplyEgress(*m.managerConfig.RestoredEgress); err != nil {
+			log.Panic("egress restore failed")
+		}
+		server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.RestrictLease(m.managerConfig.EgressExpiresAt)
+	}
 	// Load Nodes config
 	for _, nodeConfig := range m.managerConfig.NodesConfig {
 		var apiClient api.API
@@ -210,6 +220,11 @@ func (m *Manager) Start() {
 func (m *Manager) Close() {
 	m.statusLock.Lock()
 	defer m.statusLock.Unlock()
+	for _, lease := range m.principals {
+		m.removePrincipal(lease)
+	}
+	m.principals = nil
+	m.principalInstalls = 0
 	for _, s := range m.Service {
 		err := s.Close()
 		if err != nil {
@@ -236,7 +251,7 @@ func (m *Manager) StartChecked() (err error) {
 		}
 	}()
 	m.Start()
-	return nil
+	return m.RestoreEgressPrincipals()
 }
 
 func parseConnectionConfig(c *ConnectionConfig) (policy *conf.Policy) {

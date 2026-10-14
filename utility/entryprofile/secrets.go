@@ -143,6 +143,19 @@ func readSecret(filename string) (StoredSecret, error) {
 	return result, err
 }
 
+// This narrower resolver cannot traverse a profile or materialize TLS files.
+func ResolveSSCredential(reference, method, directory, coreID string) (string, error) {
+	prefix := "secret://core/" + coreID + "/"
+	if !identity.MatchString(coreID) || !strings.HasPrefix(reference, prefix) || !identity.MatchString(strings.TrimPrefix(reference, prefix)) {
+		return "", errors.New("secret scope mismatch")
+	}
+	secret, err := readSecret(filepath.Join(directory, strings.TrimPrefix(reference, prefix)+".json"))
+	if err != nil || secret.Kind != "shadowsocks-password" || secret.Password == "" || secret.Method != method {
+		return "", errors.New("SS secret scope or cipher mismatch")
+	}
+	return secret.Password, nil
+}
+
 func Resolve(input []byte, directory, coreID string) ([]byte, error) {
 	if len(input) > MaxBytes {
 		return nil, errors.New("oversized profile")

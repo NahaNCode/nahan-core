@@ -159,6 +159,21 @@ func (l *Limiter) UpdateInboundLimiter(tag string, updatedServiceList *[]api.Sub
 	return nil
 }
 
+// Infrastructure users share the node limit but never a customer's billing ID.
+func (l *Limiter) AddInfrastructureUser(tag, email string) error {
+	if !strings.HasPrefix(email, "nahan-egress/") || len(email) > 256 {
+		return fmt.Errorf("invalid infrastructure identity")
+	}
+	value, ok := l.InboundInfo.Load(tag)
+	if !ok {
+		return fmt.Errorf("no such inbound in limiter: %s", tag)
+	}
+	if _, exists := value.(*InboundInfo).SubscriptionInfo.LoadOrStore(email, SubscriptionInfo{UID: 0}); exists {
+		return fmt.Errorf("infrastructure limiter identity already exists")
+	}
+	return nil
+}
+
 func (l *Limiter) DeleteInboundLimiter(tag string) error {
 	var users []string
 	if value, ok := l.InboundInfo.Load(tag); ok {
@@ -217,6 +232,9 @@ func (l *Limiter) GetOnlineDevice(tag string) (*[]api.OnlineIP, error) {
 					return true
 				}
 				uid := activity.uid
+				if uid <= 0 {
+					return true
+				}
 				ip := key.(string)
 				onlineIP = append(onlineIP, api.OnlineIP{UID: uid, IP: ip})
 				return true
