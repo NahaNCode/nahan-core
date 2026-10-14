@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN go run ./tools/xray-patch > /tmp/xray-modfile \
-    && go test -modfile="$(cat /tmp/xray-modfile)" ./internal/regression ./app/xdispatcher ./cmd ./manager ./utility/connectionpolicy ./utility/controlplane ./utility/paneltls ./utility/outbox ./utility/limiter ./api/nahan ./service/controller \
+    && go test -modfile="$(cat /tmp/xray-modfile)" ./internal/regression ./app/xdispatcher ./cmd ./manager ./utility/connectionpolicy ./utility/controlplane ./utility/paneltls ./utility/outbox ./utility/limiter ./utility/egress ./api/nahan ./service/controller \
     && CGO_ENABLED=0 go build -modfile="$(cat /tmp/xray-modfile)" -trimpath -ldflags="-s -w -buildid=" -o /out/NahaN .
 
 FROM alpine:3.22
