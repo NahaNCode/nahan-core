@@ -24,6 +24,9 @@ import (
 )
 
 type APIClient struct {
+	devices               deviceLeases
+	deviceCredentials     map[int]deviceCredential
+	deviceEmailSequence   uint64
 	coreID                string
 	secretsDir            string
 	protocol              string
@@ -129,6 +132,7 @@ func (c *APIClient) ReportHeartbeat() error {
 		"version": "NahaN Core v1.5.0", "pendingReports": pending, "lastError": lastError,
 		"configSynced": c.configFetched.Load(), "servicesSynced": c.subscriptionsFetched.Load(),
 		"authorizationRevision": c.appliedAuthorization.Load(), "authorizationRuntimeVersion": 1,
+		"deviceRuntimeVersion": 1,
 	}).Post(c.path("heartbeat"))
 	_, err = c.parseResponse(res, c.path("heartbeat"), err)
 	return err
@@ -334,12 +338,17 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 	var speedLimit uint64 = 0
 
 	subscriptionList := []api.SubscriptionInfo{}
+	nextCredentials := make(map[int]deviceCredential)
 
 	for _, subscription := range *subscriptionResponse {
+		deviceMode := c.protocol == "nahan-v1" && subscription.DeviceID > 0
+		if deviceMode && (subscription.Id != subscription.DeviceID || subscription.ServiceID <= 0 || subscription.DeviceLimit < 1 || subscription.DeviceLimit > 100) {
+			return nil, errors.New("invalid registered device identity")
+		}
 		deviceLimit = subscription.Iplimit
 		ipcount = subscription.Ipcount
 
-		if deviceLimit > 0 && ipcount > 0 {
+		if !deviceMode && deviceLimit > 0 && ipcount > 0 {
 			lastOnline := 0
 			if v, ok := c.LastReportOnline[subscription.Id]; ok {
 				lastOnline = v
@@ -354,16 +363,41 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 		}
 
 		speedLimit = uint64((subscription.Speedlimit * 1000000) / 8)
+		serviceID, deviceID, email := 0, 0, subscription.Email
+		if deviceMode {
+			deviceLimit = subscription.DeviceLimit
+			serviceID, deviceID = subscription.ServiceID, subscription.DeviceID
+			if _, duplicate := nextCredentials[deviceID]; duplicate {
+				return nil, errors.New("duplicate registered device identity")
+			}
+			// Auth email is a local credential generation, not just a device ID.
+			// Old MemoryUsers retain their old email after same-ID rotation.
+			encoded, _ := json.Marshal(struct {
+				UUID, Password string
+				ServiceID      int
+			}{subscription.Uuid, subscription.Passwd, serviceID})
+			fingerprint := sha256.Sum256(encoded)
+			credential, exists := c.deviceCredentials[deviceID]
+			if !exists || credential.fingerprint != fingerprint {
+				c.deviceEmailSequence++
+				credential = deviceCredential{fingerprint: fingerprint, email: fmt.Sprintf("device-%d-%d", deviceID, c.deviceEmailSequence)}
+			}
+			nextCredentials[deviceID] = credential
+			email = credential.email
+		}
 
 		subscriptionList = append(subscriptionList, api.SubscriptionInfo{
 			UID:         subscription.Id,
+			ServiceID:   serviceID,
+			DeviceID:    deviceID,
 			UUID:        subscription.Uuid,
-			Email:       subscription.Email,
+			Email:       email,
 			Passwd:      subscription.Passwd,
 			DeviceLimit: deviceLimit,
 			SpeedLimit:  speedLimit,
 		})
 	}
+	c.deviceCredentials = nextCredentials
 
 	return &subscriptionList, nil
 }
@@ -438,7 +472,7 @@ func (c *APIClient) ReportNodeOnlineIPs(onlineSubscriptionList *[]api.OnlineIP) 
 	reportOnline := make(map[int]int)
 	data := make([]OnlineIP, len(*onlineSubscriptionList))
 	for i, subscription := range *onlineSubscriptionList {
-		data[i] = OnlineIP{UID: subscription.UID, IP: subscription.IP}
+		data[i] = OnlineIP{UID: subscription.UID, IP: subscription.IP, FirstSeen: subscription.FirstSeen, LastSeen: subscription.LastSeen, RouteTag: subscription.RouteTag, RouteRevision: subscription.RouteRevision}
 		if _, ok := reportOnline[subscription.UID]; ok {
 			reportOnline[subscription.UID]++
 		} else {

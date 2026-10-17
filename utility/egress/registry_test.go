@@ -56,9 +56,13 @@ func TestRegistryConcurrentReadersAndAtomicReplacement(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 1000; j++ {
-				tag, managed, expired := r.Lookup("entry-1")
+				tag, managed, expired, release, revision := r.AcquireObserved("entry-1")
+				release()
 				if !managed || expired || (tag != "old" && tag != "new") {
 					t.Error("partial route observed")
+				}
+				if (revision%2 == 0 && tag != "new") || (revision%2 != 0 && tag != "old") {
+					t.Error("route tag and revision from different snapshots")
 				}
 			}
 		}()

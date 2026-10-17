@@ -3,6 +3,7 @@ package limiter
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/buf"
@@ -14,6 +15,7 @@ type Writer struct {
 	limiter *rate.Limiter
 	w       io.Writer
 	ctx     context.Context
+	valid   func() bool
 }
 
 func (l *Limiter) RateWriter(writer buf.Writer, limiter *rate.Limiter) buf.Writer {
@@ -24,12 +26,26 @@ func (l *Limiter) RateWriter(writer buf.Writer, limiter *rate.Limiter) buf.Write
 	}
 }
 
-func (l *Limiter) RateWriterContext(writer buf.Writer, bucket *rate.Limiter, ctx context.Context) buf.Writer {
-	return &Writer{writer: writer, limiter: bucket, ctx: ctx}
+func (l *Limiter) RateWriterContext(writer buf.Writer, bucket *rate.Limiter, ctx context.Context, checks ...func() bool) buf.Writer {
+	w := &Writer{writer: writer, limiter: bucket, ctx: ctx}
+	if len(checks) > 0 {
+		w.valid = checks[0]
+	}
+	return w
 }
 
 func waitBytes(ctx context.Context, bucket *rate.Limiter, n int) error {
+	return waitBytesChecked(ctx, bucket, n, nil)
+}
+
+func waitBytesChecked(ctx context.Context, bucket *rate.Limiter, n int, valid func() bool) error {
 	for n > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if valid != nil && !valid() {
+			return io.ErrClosedPipe
+		}
 		chunk := bucket.Burst()
 		if chunk < 1 {
 			return io.ErrClosedPipe
@@ -37,8 +53,32 @@ func waitBytes(ctx context.Context, bucket *rate.Limiter, n int) error {
 		if chunk > n {
 			chunk = n
 		}
-		if err := bucket.WaitN(ctx, chunk); err != nil {
-			return err
+		if valid == nil {
+			if err := bucket.WaitN(ctx, chunk); err != nil {
+				return err
+			}
+		} else {
+			reservation := bucket.ReserveN(time.Now(), chunk)
+			if !reservation.OK() {
+				return io.ErrClosedPipe
+			}
+			for delay := reservation.Delay(); delay > 0; delay = reservation.Delay() {
+				if delay > time.Second {
+					delay = time.Second
+				}
+				timer := time.NewTimer(delay)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					reservation.Cancel()
+					return ctx.Err()
+				case <-timer.C:
+				}
+				if !valid() {
+					reservation.Cancel()
+					return io.ErrClosedPipe
+				}
+			}
 		}
 		n -= chunk
 	}
@@ -49,15 +89,21 @@ type Reader struct {
 	buf.Reader
 	limiter *rate.Limiter
 	ctx     context.Context
+	valid   func() bool
 }
 
-func (l *Limiter) RateReader(reader buf.Reader, bucket *rate.Limiter, ctx context.Context) buf.Reader {
-	return &Reader{Reader: reader, limiter: bucket, ctx: ctx}
+func (l *Limiter) RateReader(reader buf.Reader, bucket *rate.Limiter, ctx context.Context, checks ...func() bool) buf.Reader {
+	r := &Reader{Reader: reader, limiter: bucket, ctx: ctx}
+	if len(checks) > 0 {
+		r.valid = checks[0]
+	}
+	return r
 }
 func (r *Reader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 	mb, err := r.Reader.ReadMultiBuffer()
-	if waitErr := waitBytes(r.ctx, r.limiter, int(mb.Len())); waitErr != nil {
+	if waitErr := waitBytesChecked(r.ctx, r.limiter, int(mb.Len()), r.valid); waitErr != nil {
 		buf.ReleaseMulti(mb)
+		common.Interrupt(r.Reader)
 		return nil, waitErr
 	}
 	return mb, err
@@ -70,8 +116,9 @@ func (w *Writer) Close() error {
 }
 
 func (w *Writer) WriteMultiBuffer(mb buf.MultiBuffer) error {
-	if err := waitBytes(w.ctx, w.limiter, int(mb.Len())); err != nil {
+	if err := waitBytesChecked(w.ctx, w.limiter, int(mb.Len()), w.valid); err != nil {
 		buf.ReleaseMulti(mb)
+		common.Interrupt(w.writer)
 		return err
 	}
 	return w.writer.WriteMultiBuffer(mb)

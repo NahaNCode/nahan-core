@@ -33,6 +33,24 @@ import (
 	"github.com/NahaNCode/nahan-core/utility/rule"
 )
 
+type flowRouteKey struct{}
+type flowRoute struct {
+	mu       sync.RWMutex
+	tag      string
+	revision int64
+}
+
+func (d *DefaultDispatcher) touchFlow(ctx context.Context, tag, email, ip string) {
+	route, _ := ctx.Value(flowRouteKey{}).(*flowRoute)
+	if route == nil {
+		d.Limiter.TouchOnline(tag, email, ip)
+		return
+	}
+	route.mu.RLock()
+	defer route.mu.RUnlock()
+	d.Limiter.TouchOnlineRoute(tag, email, ip, route.tag, route.revision)
+}
+
 var errSniffingTimeout = errors.New("timeout on sniffing")
 
 type cachedReader struct {
@@ -290,22 +308,32 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 		// Speed Limit and Device Limit
 		bucket, ok, reject := d.Limiter.GetUserBucket(sessionInbound.Tag, user.Email, sessionInbound.Source.Address.IP().String())
 		if reject {
-			errors.LogWarning(ctx, "Subscription ", user.Email, " has exceeded allowed IP limit")
+			errors.LogWarning(ctx, "Subscription admission rejected")
 			common.Close(outboundLink.Writer)
 			common.Close(inboundLink.Writer)
 			common.Interrupt(outboundLink.Reader)
 			common.Interrupt(inboundLink.Reader)
-			return nil, nil, errors.New("Subscription ", user.Email, " has exceeded allowed IP limit")
+			return nil, nil, errors.New("Subscription admission rejected")
 		}
+		valid := func() bool { return d.Limiter.DeviceValid(sessionInbound.Tag, user.Email) }
+		stop := func() {
+			common.Interrupt(outboundLink.Reader)
+			common.Interrupt(outboundLink.Writer)
+			common.Interrupt(inboundLink.Reader)
+			common.Interrupt(inboundLink.Writer)
+		}
+		// Check inside the rate wrappers as well, after any throttling wait.
+		inboundLink.Writer = &activityWriter{Writer: inboundLink.Writer, valid: valid, stop: stop}
+		outboundLink.Writer = &activityWriter{Writer: outboundLink.Writer, valid: valid, stop: stop}
 		if ok {
-			inboundLink.Writer = d.Limiter.RateWriterContext(inboundLink.Writer, bucket, ctx)
-			outboundLink.Writer = d.Limiter.RateWriterContext(outboundLink.Writer, bucket, ctx)
+			inboundLink.Writer = d.Limiter.RateWriterContext(inboundLink.Writer, bucket, ctx, valid)
+			outboundLink.Writer = d.Limiter.RateWriterContext(outboundLink.Writer, bucket, ctx, valid)
 		}
 		activity := func() {
-			d.Limiter.TouchOnline(sessionInbound.Tag, user.Email, sessionInbound.Source.Address.IP().String())
+			d.touchFlow(ctx, sessionInbound.Tag, user.Email, sessionInbound.Source.Address.IP().String())
 		}
-		inboundLink.Writer = &activityWriter{Writer: inboundLink.Writer, touch: activity}
-		outboundLink.Writer = &activityWriter{Writer: outboundLink.Writer, touch: activity}
+		inboundLink.Writer = &activityWriter{Writer: inboundLink.Writer, touch: activity, valid: valid, stop: stop}
+		outboundLink.Writer = &activityWriter{Writer: outboundLink.Writer, touch: activity, valid: valid, stop: stop}
 
 		p := d.policy.ForLevel(user.Level)
 		if p.Stats.UserUplink {
@@ -367,6 +395,7 @@ func (d *DefaultDispatcher) shouldOverride(ctx context.Context, result SniffResu
 
 // Dispatch implements routing.Dispatcher.
 func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destination) (*transport.Link, error) {
+	ctx = context.WithValue(ctx, flowRouteKey{}, new(flowRoute))
 	if !destination.IsValid() {
 		panic("Dispatcher: Invalid destination.")
 	}
@@ -419,6 +448,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 
 // DispatchLink implements routing.Dispatcher.
 func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.Destination, outbound *transport.Link) error {
+	ctx = context.WithValue(ctx, flowRouteKey{}, new(flowRoute))
 	if !destination.IsValid() {
 		return errors.New("Dispatcher: Invalid destination.")
 	}
@@ -486,12 +516,15 @@ func (d *DefaultDispatcher) wrapLink(ctx context.Context, link *transport.Link) 
 		common.Interrupt(link.Writer)
 		return link
 	}
+	valid := func() bool { return d.Limiter.DeviceValid(inbound.Tag, user.Email) }
+	stop := func() { owned.Interrupt(); common.Interrupt(link.Writer) }
+	link.Writer = &activityWriter{Writer: link.Writer, valid: valid, stop: stop}
 	if limited {
-		reader.Reader = d.Limiter.RateReader(reader.Reader, bucket, ctx)
-		link.Writer = d.Limiter.RateWriterContext(link.Writer, bucket, ctx)
+		reader.Reader = d.Limiter.RateReader(reader.Reader, bucket, ctx, valid)
+		link.Writer = d.Limiter.RateWriterContext(link.Writer, bucket, ctx, valid)
 	}
-	activity := &activityWriter{Writer: link.Writer, touch: func() {
-		d.Limiter.TouchOnline(inbound.Tag, user.Email, inbound.Source.Address.IP().String())
+	activity := &activityWriter{Writer: link.Writer, valid: valid, stop: stop, touch: func() {
+		d.touchFlow(ctx, inbound.Tag, user.Email, inbound.Source.Address.IP().String())
 	}}
 	activity.mark()
 	reader.Reader = &activityReader{Reader: reader.Reader, activity: activity}
@@ -611,7 +644,7 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 		return
 	}
 	inTag := routingLink.GetInboundTag()
-	managedTag, managed, expired, release := d.Egress.Acquire(inTag)
+	managedTag, managed, expired, release, managedRevision := d.Egress.AcquireObserved(inTag)
 	defer release()
 	sourceIP, localIP := "", ""
 	if sessionInbound.Source.Address != nil && sessionInbound.Source.Address.Family().IsIP() {
@@ -623,7 +656,7 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 	if sessionInbound.Local.Address != nil && sessionInbound.Local.Address.Family().IsIP() {
 		localIP = sessionInbound.Local.Address.IP().String()
 	}
-	exitTag, exitManaged, exitExpired, exitRelease := d.ExitRoutes.Acquire(inTag, sourceIP, localIP)
+	exitTag, exitManaged, exitExpired, exitRelease, exitRevision := d.ExitRoutes.AcquireObserved(inTag, sourceIP, localIP)
 	defer exitRelease()
 	if d.TransitRequired(inTag) && (!managed || expired || exitManaged) {
 		common.Close(link.Writer)
@@ -693,6 +726,20 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 		common.Close(link.Writer)
 		common.Interrupt(link.Reader)
 		return
+	}
+	if observed, _ := ctx.Value(flowRouteKey{}).(*flowRoute); observed != nil {
+		revision := int64(0)
+		if exitManaged && handler.Tag() == exitTag {
+			revision = exitRevision
+		} else if managed && handler.Tag() == managedTag {
+			revision = managedRevision
+		}
+		observed.mu.Lock()
+		observed.tag, observed.revision = handler.Tag(), revision
+		observed.mu.Unlock()
+		if sessionInbound.User != nil {
+			d.touchFlow(ctx, inTag, sessionInbound.User.Email, sourceIP)
+		}
 	}
 
 	// Newer Xray outbound handlers rely on the selected tag in session context.

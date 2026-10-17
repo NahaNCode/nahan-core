@@ -559,6 +559,13 @@ func compareSubscriptionList(old, new *[]api.SubscriptionInfo) (deleted, added [
 func (c *Controller) userInfoMonitor() (err error) {
 	c.monitorMu.Lock()
 	defer c.monitorMu.Unlock()
+	if source, ok := c.apiClient.(interface{ DeviceGate() api.DeviceGate }); ok {
+		if gate := source.DeviceGate(); gate != nil {
+			if err := gate.RenewDevices(); err != nil {
+				log.Print("device lease renewal failed")
+			}
+		}
+	}
 	// Get Subscription traffic
 	var subscriptionTraffic []api.SubscriptionTraffic
 	var snapshots []trafficSnapshot
