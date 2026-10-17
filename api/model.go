@@ -117,6 +117,8 @@ type RelayNodeInfo struct {
 
 type SubscriptionInfo struct {
 	UID         int
+	ServiceID   int
+	DeviceID    int
 	Email       string
 	Passwd      string
 	SpeedLimit  uint64
@@ -125,8 +127,20 @@ type SubscriptionInfo struct {
 }
 
 type OnlineIP struct {
-	UID int
-	IP  string
+	UID           int
+	IP            string
+	FirstSeen     int64
+	LastSeen      int64
+	RouteTag      string
+	RouteRevision int64
+}
+
+// DeviceGate admits at connection setup; ValidDevice must never perform I/O.
+type DeviceGate interface {
+	AdmitDevice(int) bool
+	ValidDevice(int) bool
+	TouchDevice(int)
+	RenewDevices() error
 }
 
 type SubscriptionTraffic struct {

@@ -127,13 +127,16 @@ type SubscriptionResponse struct {
 }
 
 type Subscription struct {
-	Id         int     `json:"id"`
-	Uuid       string  `json:"uuid"`
-	Email      string  `json:"email"`
-	Passwd     string  `json:"passwd"`
-	Speedlimit float64 `json:"speedlimit"`
-	Iplimit    int     `json:"iplimit"`
-	Ipcount    int     `json:"ipcount"`
+	Id          int     `json:"id"`
+	ServiceID   int     `json:"serviceId"`
+	DeviceID    int     `json:"deviceId"`
+	DeviceLimit int     `json:"deviceLimit"`
+	Uuid        string  `json:"uuid"`
+	Email       string  `json:"email"`
+	Passwd      string  `json:"passwd"`
+	Speedlimit  float64 `json:"speedlimit"`
+	Iplimit     int     `json:"iplimit"`
+	Ipcount     int     `json:"ipcount"`
 }
 
 // Response is the common response
@@ -149,8 +152,12 @@ type PostData struct {
 
 // OnlineUser is the data structure of online user
 type OnlineIP struct {
-	UID int    `json:"subscription_id"`
-	IP  string `json:"ip"`
+	UID           int    `json:"subscription_id"`
+	IP            string `json:"ip"`
+	FirstSeen     int64  `json:"firstSeen,omitempty"`
+	LastSeen      int64  `json:"lastSeen,omitempty"`
+	RouteTag      string `json:"routeTag,omitempty"`
+	RouteRevision int64  `json:"routeRevision,omitempty"`
 }
 
 // SubscriptionTraffic is the data structure of traffic

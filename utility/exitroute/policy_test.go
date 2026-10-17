@@ -33,8 +33,8 @@ func TestSharedPortSeparatesTunnelEndpointsAndLeavesOthersUnchanged(t *testing.T
 		t.Fatal(err)
 	}
 	for _, item := range []struct{ source, local, id string }{{"10.241.88.1", "10.241.88.2", first}, {"10.241.87.1", "10.241.87.2", second}} {
-		tag, managed, expired, release := p.Acquire("Shadowsocks_31006_17", item.source, item.local)
-		if tag != "handler-"+item.id || !managed || expired {
+		tag, managed, expired, release, revision := p.AcquireObserved("Shadowsocks_31006_17", item.source, item.local)
+		if tag != "handler-"+item.id || !managed || expired || revision != 1 {
 			t.Fatal(tag, managed, expired)
 		}
 		release()

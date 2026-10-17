@@ -106,6 +106,11 @@ func (p *Policy) Apply(s Snapshot, owned func(netip.Addr) bool, install func(egr
 }
 
 func (p *Policy) Acquire(tag, source, local string) (string, bool, bool, func()) {
+	outbound, managed, expired, release, _ := p.AcquireObserved(tag, source, local)
+	return outbound, managed, expired, release
+}
+
+func (p *Policy) AcquireObserved(tag, source, local string) (string, bool, bool, func(), int64) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, rule := range p.rules {
@@ -116,20 +121,20 @@ func (p *Policy) Acquire(tag, source, local string) (string, bool, bool, func())
 		// gateway. A validated /30 pair identifies its sole owned peer endpoint.
 		if rule.Mode == "independent" || (rule.SourceIP == source && (rule.LocalIP == local || local == "0.0.0.0" || local == "::")) {
 			if !rule.Active {
-				return "", true, true, func() {}
+				return "", true, true, func() {}, 0
 			}
-			outbound, managed, expired, release := p.registry.Acquire(rule.ID)
+			outbound, managed, expired, release, revision := p.registry.AcquireObserved(rule.ID)
 			if !managed {
-				return "", true, true, release
+				return "", true, true, release, revision
 			}
-			return outbound, managed, expired, release
+			return outbound, managed, expired, release, revision
 		}
 		// A missing local socket identity must not silently select the default IP.
 		if rule.SourceIP == source && strings.TrimSpace(local) == "" {
-			return "", true, true, func() {}
+			return "", true, true, func() {}, 0
 		}
 	}
-	return "", false, false, func() {}
+	return "", false, false, func() {}, 0
 }
 
 // Reserve restores only the fail-closed selectors before listeners start.

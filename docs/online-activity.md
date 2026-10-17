@@ -9,7 +9,10 @@ on uplink reads and downlink writes; pipe streams refresh on both writers.
 The dispatcher now refreshes authenticated user/IP activity on nonempty writes
 in either direction, at most once per ten seconds per direction. Reports retain
 recent activity and expire IPs after two minutes without activity. No per-stream
-goroutine or timer is added. Stale IPs also stop consuming the local device limit.
+goroutine or timer is added for presence. Stale IPs stop consuming legacy IP
+limits. Native registered-device mode uses backend identity leases instead of
+IP counts; see [Registered Device Runtime](registered-devices.md) for migration,
+lease enforcement, and route observations.
 
 This measures recently active user/IP pairs, not humans or open TCP sockets.
 Idle sessions expire, NAT can share an IP, and one subscription can use multiple

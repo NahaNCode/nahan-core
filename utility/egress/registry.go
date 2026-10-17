@@ -114,8 +114,17 @@ func (r *Registry) lookup(inbound string) (outbound string, managed, expired boo
 // Acquire pins the selected immutable handler before a routing replacement can
 // retire it. Release happens only when the outbound dispatch has finished.
 func (r *Registry) Acquire(inbound string) (outbound string, managed, expired bool, release func()) {
+	outbound, managed, expired, release, _ = r.AcquireObserved(inbound)
+	return
+}
+
+// AcquireObserved captures the revision under the same lock as route selection.
+func (r *Registry) AcquireObserved(inbound string) (outbound string, managed, expired bool, release func(), revision int64) {
 	r.mu.Lock()
 	outbound, managed, expired = r.lookup(inbound)
+	if managed {
+		revision = r.revision
+	}
 	if managed && !expired {
 		if r.users == nil {
 			r.users = make(map[string]int)

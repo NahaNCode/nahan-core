@@ -24,7 +24,7 @@ func TestOnlineActivitySurvivesReportsAndExpires(t *testing.T) {
 	}
 	v, _ := l.InboundInfo.Load("node")
 	ips, _ := v.(*InboundInfo).SubscriptionOnlineIP.Load(email)
-	ips.(*sync.Map).Store("192.0.2.1", onlineActivity{7, time.Now().Add(-3 * time.Minute)})
+	ips.(*sync.Map).Store("192.0.2.1", onlineActivity{uid: 7, at: time.Now().Add(-3 * time.Minute)})
 	rows, _ := l.GetOnlineDevice("node")
 	if len(*rows) != 0 {
 		t.Fatal("stale activity counted")

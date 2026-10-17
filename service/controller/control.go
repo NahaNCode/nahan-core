@@ -139,7 +139,11 @@ func consumeTraffic(snapshots []trafficSnapshot) {
 }
 
 func (c *Controller) AddInboundLimiter(tag string, nodeSpeedLimit uint64, userList *[]api.SubscriptionInfo, globalIPLimit *limiter.IPLimit) error {
-	err := c.limiter.AddInboundLimiter(tag, nodeSpeedLimit, userList, globalIPLimit)
+	var gate api.DeviceGate
+	if source, ok := c.apiClient.(interface{ DeviceGate() api.DeviceGate }); ok {
+		gate = source.DeviceGate()
+	}
+	err := c.limiter.AddInboundLimiter(tag, nodeSpeedLimit, userList, globalIPLimit, gate)
 	return err
 }
 
