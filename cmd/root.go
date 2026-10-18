@@ -216,6 +216,7 @@ func run() error {
 	defer func() {
 		if panel != nil {
 			panel.CloseEgressPreflight()
+			panel.CloseEgressHealth()
 		}
 		m.Close()
 	}()
@@ -267,6 +268,7 @@ func run() error {
 				} else {
 					previous := managerConfig.NodesConfig
 					panel.CloseEgressPreflight()
+					panel.CloseEgressHealth()
 					m.Close()
 					managerConfig.NodesConfig = candidate
 					m = manager.New(managerConfig)

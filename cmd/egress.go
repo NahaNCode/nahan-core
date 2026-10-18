@@ -48,6 +48,7 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		c.RoutingPolicyRefresh()
 	}
 	if c.Config.HasCustomRouting {
+		c.CloseEgressHealth()
 		c.CloseEgressPreflight()
 		return errors.New("routing policy requires approval")
 	}
@@ -62,8 +63,10 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 	}
 	// Renew/apply the live snapshot before starting any candidate path work.
 	if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
+		c.CloseEgressHealth()
 		return err
 	}
+	observePublishedEgress(c, m, state.Desired)
 	if state.Prepared != nil {
 		var plan manager.EgressPlan
 		code := ""
@@ -86,6 +89,50 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		})
 	}
 	return c.PreparedReceipt(context.Background(), nil, nil)
+}
+
+func observePublishedEgress(c *controlplane.Client, m *manager.Manager, document *controlplane.EgressDocument) {
+	if document == nil {
+		c.CloseEgressHealth()
+		return
+	}
+	var plan manager.EgressPlan
+	if document.Validate() != nil || json.Unmarshal([]byte(document.PlanJSON), &plan) != nil {
+		c.CloseEgressHealth()
+		return
+	}
+	// Test only profiles actually bound to live entries, sharing one result per profile.
+	bound := map[string]bool{}
+	for _, b := range plan.Snapshot.Bindings {
+		bound[b.Outbound] = true
+	}
+	c.ObserveEgress(document, func(ctx context.Context) []controlplane.EgressHealthResult {
+		results := make([]controlplane.EgressHealthResult, 0)
+		profiles := make([]manager.EgressProfile, 0)
+		for _, profile := range plan.Profiles {
+			if bound[profile.ID] && (profile.Principal != nil || profile.Secret != nil || profile.External != nil) {
+				profiles = append(profiles, profile)
+			}
+		}
+		for _, index := range c.EgressHealthBatch(len(profiles), 4) {
+			profile := profiles[index]
+			if ctx.Err() != nil {
+				break
+			}
+			if !bound[profile.ID] || (profile.Principal == nil && profile.Secret == nil && profile.External == nil) {
+				continue
+			}
+			var latency int64
+			err := m.ProbeEgressProfile(ctx, profile, func(ctx context.Context, address, user, password string) error {
+				start := time.Now()
+				err := c.ProbeViaSOCKS(ctx, address, user, password)
+				latency = time.Since(start).Milliseconds()
+				return err
+			})
+			results = append(results, controlplane.EgressHealthResult{ProfileID: profile.ID, Alive: err == nil, LatencyMS: latency, CheckedAt: time.Now().UTC()})
+		}
+		return results
+	})
 }
 
 func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config, desired *controlplane.EgressDocument) error {

@@ -47,6 +47,7 @@ type Client struct {
 	Key                  string
 	http                 *http.Client
 	preflight            egressPreflight
+	health               egressHealth
 }
 
 var ErrUnauthorized = errors.New("core authentication revoked")
