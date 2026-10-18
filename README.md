@@ -69,6 +69,16 @@ GRE management, container binary upgrades, imported-certificate renewal and
 complete production provisioning remain incomplete. Example IPs/URLs are
 placeholders, not working demo servers.
 
+### Operational readiness
+
+Before directing customer traffic to an installation, verify a fresh heartbeat,
+matching desired and applied revisions, and successful listener preflight. Check
+the published address, port and transport with a real client connection; a healthy
+control-plane connection alone does not prove end-to-end Internet access.
+Preserve the panel-issued identity files and keep a rollback checkpoint before
+changing a listener or upgrading its runtime. See the installation and traffic
+outbox guides below for service setup and accounting behavior.
+
 ## Build and documentation
 
 Use the Go version in `go.mod` (Go 1.26 or newer) and the pinned patch tool:
