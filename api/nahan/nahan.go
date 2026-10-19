@@ -70,7 +70,12 @@ func New(apiConfig *api.Config) *APIClient {
 		if err != nil {
 			panic(err)
 		}
-		client.SetTransport(transport)
+		routes, err := paneltls.WithFailover(apiConfig.APIHost, transport)
+		if err != nil {
+			panic(err)
+		}
+		client.SetTransport(routes)
+		client.SetTimeout(paneltls.RequestTimeout)
 		if apiConfig.ServerName != "" {
 			client.SetHeader("Host", apiConfig.ServerName)
 		}

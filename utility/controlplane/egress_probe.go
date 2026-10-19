@@ -38,7 +38,12 @@ func (c *Client) ProbeViaSOCKS(ctx context.Context, address, user, password stri
 	}
 	t.Proxy = nil
 	t.DialContext = d.DialContext
-	probe := &Client{Config: c.Config, Key: c.Key, http: &http.Client{Transport: t, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	routes, err := paneltls.WithFailover(c.Config.APIHost, t)
+	if err != nil {
+		return err
+	}
+	probe := &Client{Config: c.Config, Key: c.Key, http: &http.Client{Transport: routes, Timeout: paneltls.RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	defer probe.http.CloseIdleConnections()
 	_, err = probe.Manifest(ctx)
 	return err
 }

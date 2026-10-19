@@ -72,7 +72,15 @@ func (e *Engine) panelRequest(ctx context.Context, method, path string, body any
 		}
 		transport.Proxy = http.ProxyURL(proxy)
 	}
-	client := &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var routes http.RoundTripper = transport
+	if e.Profile.PanelProxy == "" {
+		routes, err = paneltls.WithFailover(e.Profile.PanelURL, transport)
+		if err != nil {
+			return err
+		}
+	}
+	client := &http.Client{Transport: routes, Timeout: paneltls.RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	defer client.CloseIdleConnections()
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err

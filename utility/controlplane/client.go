@@ -72,7 +72,11 @@ func New(config *Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Config: config, Key: key, http: &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	routes, err := paneltls.WithFailover(config.APIHost, transport)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{Config: config, Key: key, http: &http.Client{Transport: routes, Timeout: paneltls.RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 func (c *Client) request(ctx context.Context, method, resource string, body any, out any) error {
 	var reader io.Reader
