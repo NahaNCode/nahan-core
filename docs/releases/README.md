@@ -5,7 +5,10 @@ exact commit being released. The signed-release workflow checks that the file
 exists before building and uses its contents as the GitHub release body.
 Do not reuse a generic release description or publish an empty placeholder.
 
-Write operator-focused notes covering:
+Write detailed, version-specific release notes in English. Do not add a Persian
+translation unless explicitly requested. Keep descriptions limited to core
+runtime responsibilities; do not describe host infrastructure management as a
+core feature. Write operator-focused notes covering:
 
 1. Summary and the concrete problem addressed.
 2. Detailed changes, grouped by affected runtime component.
