@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/NahaNCode/nahan-core/app/xdispatcher"
@@ -67,6 +69,7 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		c.CloseEgressPreflight()
 		return errors.New("routing policy requires approval")
 	}
+	observeInstalledEgress(c, m, config)
 	state, err := c.Egress(context.Background())
 	if err != nil {
 		return err
@@ -95,7 +98,6 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 	// Renew/apply the live snapshot before starting any candidate path work.
 	if !liveRenewed {
 		if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
-			c.CloseEgressHealth()
 			return err
 		}
 	}
@@ -124,14 +126,30 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 	return c.PreparedReceipt(context.Background(), nil, nil)
 }
 
+func observeInstalledEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config) {
+	if !config.PersistentEgress || config.RestoredEgress == nil {
+		return
+	}
+	state, err := egress.LoadState(filepath.Join(filepath.Dir(c.Config.KeyFile), "egress-state.bin"), c.Config.CoreID, c.Key)
+	if err != nil || state.RoutePublication != "committed" {
+		return
+	}
+	var plan manager.EgressPlan
+	if json.Unmarshal(state.Plan, &plan) != nil || plan.Snapshot.Revision != config.RestoredEgress.Snapshot.Revision {
+		return
+	}
+	digest := sha256.Sum256(state.Plan)
+	document := &controlplane.EgressDocument{Revision: plan.Snapshot.Revision, Digest: hex.EncodeToString(digest[:]), PlanJSON: string(state.Plan)}
+	observePublishedEgress(c, m, document)
+}
+
 func observePublishedEgress(c *controlplane.Client, m *manager.Manager, document *controlplane.EgressDocument) {
 	if document == nil {
-		c.CloseEgressHealth()
+		// Absence during synchronization is not withdrawal of the installed snapshot.
 		return
 	}
 	var plan manager.EgressPlan
 	if document.Validate() != nil || json.Unmarshal([]byte(document.PlanJSON), &plan) != nil {
-		c.CloseEgressHealth()
 		return
 	}
 	// Test only profiles actually bound to live entries, sharing one result per profile.

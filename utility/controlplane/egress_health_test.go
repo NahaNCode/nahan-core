@@ -51,10 +51,7 @@ func TestEgressHealthIsBoundedScopedAndRateLimited(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("report missing")
 	}
-	// Completion updates next before another worker can be started.
-	c.health.mu.Lock()
-	c.health.next = time.Now().Add(time.Hour)
-	c.health.mu.Unlock()
+	// Repeated control polls share the periodic worker and cannot trigger another check.
 	c.ObserveEgress(&document, check)
 	if calls.Load() != 1 {
 		t.Fatal("duplicate worker")
@@ -82,4 +79,56 @@ func TestEgressHealthCancelsWithdrawnPublication(t *testing.T) {
 	bad := document
 	bad.Digest = "tampered"
 	c.ObserveEgress(&bad, func(context.Context) []EgressHealthResult { t.Error("invalid plan probed"); return nil })
+}
+
+func TestEgressHealthContinuesWithoutControlPolling(t *testing.T) {
+	received := make(chan struct{}, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{}`))
+		received <- struct{}{}
+	}))
+	defer server.Close()
+	c := &Client{Config: &Config{APIHost: server.URL, CoreID: "core"}, Key: "key", http: server.Client()}
+	c.health.interval = 10 * time.Millisecond
+	defer c.CloseEgressHealth()
+	document := preflightDocument(1)
+	c.ObserveEgress(&document, func(context.Context) []EgressHealthResult {
+		return []EgressHealthResult{{ProfileID: "route", Alive: true, CheckedAt: time.Now().UTC()}}
+	})
+	for i := 0; i < 3; i++ {
+		select {
+		case <-received:
+		case <-time.After(time.Second):
+			t.Fatal("observer depends on another control poll")
+		}
+	}
+}
+
+func TestEgressHealthRetriesFailedReportWithoutAnotherPoll(t *testing.T) {
+	var requests atomic.Int32
+	recovered := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte(`{}`))
+		select {
+		case recovered <- struct{}{}:
+		default:
+		}
+	}))
+	defer server.Close()
+	c := &Client{Config: &Config{APIHost: server.URL, CoreID: "core"}, Key: "key", http: server.Client()}
+	c.health.interval = 10 * time.Millisecond
+	defer c.CloseEgressHealth()
+	document := preflightDocument(1)
+	c.ObserveEgress(&document, func(context.Context) []EgressHealthResult {
+		return []EgressHealthResult{{ProfileID: "route", Alive: true, CheckedAt: time.Now().UTC()}}
+	})
+	select {
+	case <-recovered:
+	case <-time.After(time.Second):
+		t.Fatal("failed report stopped independent observer")
+	}
 }

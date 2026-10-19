@@ -13,12 +13,15 @@ type EgressHealthResult struct {
 	CheckedAt time.Time `json:"checkedAt"`
 }
 type egressHealth struct {
-	mu       sync.Mutex
-	document *EgressDocument
-	cancel   context.CancelFunc
-	running  bool
-	next     time.Time
-	cursor   int
+	mu         sync.Mutex
+	document   *EgressDocument
+	cancel     context.CancelFunc
+	running    bool
+	cursor     int
+	wake       chan struct{}
+	check      func(context.Context) []EgressHealthResult
+	generation uint64
+	interval   time.Duration
 }
 
 // Rotate bounded batches rather than probing an unbounded fleet on every poll.
@@ -50,34 +53,66 @@ func (c *Client) ObserveEgress(document *EgressDocument, check func(context.Cont
 			h.cancel()
 		}
 		h.document = nil
+		h.generation++
+		h.running = false
 		return
 	}
 	if document.Validate() != nil || check == nil {
 		return
 	}
 	changed := h.document == nil || *h.document != *document
-	if changed && h.cancel != nil {
-		h.cancel()
-	}
-	if h.running {
-		return
-	}
-	if !changed && time.Now().Before(h.next) {
-		return
-	}
 	copyDocument := *document
 	h.document = &copyDocument
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	h.check = check
+	if h.running {
+		if changed {
+			select {
+			case h.wake <- struct{}{}:
+			default:
+			}
+		}
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	h.running = true
+	h.generation++
+	generation := h.generation
+	h.wake = make(chan struct{}, 1)
+	wake := h.wake
+	interval := h.interval
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
 	go func() {
 		defer cancel()
-		defer func() { h.mu.Lock(); h.running = false; h.next = time.Now().Add(60 * time.Second); h.mu.Unlock() }()
-		results := check(ctx)
-		if ctx.Err() != nil || len(results) == 0 || len(results) > 256 {
-			return
+		for ctx.Err() == nil {
+			h.mu.Lock()
+			if h.generation != generation || h.document == nil {
+				h.mu.Unlock()
+				return
+			}
+			current, probe := *h.document, h.check
+			h.mu.Unlock()
+			attempt, stop := context.WithTimeout(ctx, 90*time.Second)
+			results := probe(attempt)
+			h.mu.Lock()
+			currentStillPublished := h.generation == generation && h.document != nil && *h.document == current
+			h.mu.Unlock()
+			if currentStillPublished && attempt.Err() == nil && len(results) > 0 && len(results) <= 256 {
+				_ = c.request(attempt, "POST", "egress/health", map[string]any{"revision": current.Revision, "digest": current.Digest, "results": results}, nil)
+			}
+			stop()
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-wake:
+				timer.Stop()
+			case <-timer.C:
+			}
 		}
-		_ = c.request(ctx, "POST", "egress/health", map[string]any{"revision": copyDocument.Revision, "digest": copyDocument.Digest, "results": results}, nil)
 	}()
 }
 func (c *Client) CloseEgressHealth() { c.ObserveEgress(nil, nil) }
