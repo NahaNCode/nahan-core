@@ -43,6 +43,17 @@ func restoreEgress(c *controlplane.Client, config *manager.Config) error {
 	return nil
 }
 
+func managedEgressRenewalDue(config *manager.Config, now time.Time) bool {
+	return config.RestoredEgress != nil && !config.EgressExpiresAt.After(now.Add(15*time.Second))
+}
+
+func renewManagedEgressBeforeControlWork(c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
+	if !managedEgressRenewalDue(config, time.Now()) {
+		return nil
+	}
+	return syncEgress(c, m, config)
+}
+
 func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
 	if c.RoutingPolicyRefresh != nil {
 		c.RoutingPolicyRefresh()
@@ -56,15 +67,33 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 	if err != nil {
 		return err
 	}
+	// A fresh, unchanged panel authorization can renew the live route using its
+	// existing credentials, even if the separate credential delivery is delayed.
+	liveRenewed := false
+	if state.Desired != nil && config.RestoredEgress != nil {
+		current, marshalErr := json.Marshal(config.RestoredEgress)
+		var desired manager.EgressPlan
+		if marshalErr == nil && json.Unmarshal([]byte(state.Desired.PlanJSON), &desired) == nil {
+			candidate, candidateErr := json.Marshal(desired)
+			if candidateErr == nil && string(current) == string(candidate) {
+				if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
+					return err
+				}
+				liveRenewed = true
+			}
+		}
+	}
 	if state.CredentialRuntimeVersion == 1 {
 		if err = c.SyncEgressCredentials(context.Background()); err != nil {
 			return err
 		}
 	}
 	// Renew/apply the live snapshot before starting any candidate path work.
-	if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
-		c.CloseEgressHealth()
-		return err
+	if !liveRenewed {
+		if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
+			c.CloseEgressHealth()
+			return err
+		}
 	}
 	observePublishedEgress(c, m, state.Desired)
 	if state.Prepared != nil {

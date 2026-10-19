@@ -249,8 +249,14 @@ func run() error {
 			if panel == nil {
 				continue
 			}
+			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
+				log.Warn("Live egress renewal unavailable before job polling")
+			}
 			if err := panel.ProcessJobs(context.Background()); err != nil {
 				log.Warn("Core job polling failed")
+			}
+			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
+				log.Warn("Live egress renewal unavailable before manifest polling")
 			}
 			next, err := panel.Manifest(context.Background())
 			if err != nil {
@@ -295,11 +301,20 @@ func run() error {
 					}
 				}
 			}
+			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
+				log.Warn("Live egress renewal unavailable before destination synchronization")
+			}
 			if err := syncExitRouting(panel, m, managerConfig); err != nil {
 				log.Warn("Destination exit synchronization unavailable")
 			}
+			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
+				log.Warn("Live egress renewal unavailable before heartbeat")
+			}
 			if err := panel.Heartbeat(context.Background(), version, manifest, lastApplyError); err != nil {
 				log.Warn(err)
+			}
+			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
+				log.Warn("Live egress renewal unavailable before policy synchronization")
 			}
 			if err := syncPolicy(panel, m, managerConfig); err != nil {
 				log.Warn("Connection policy synchronization unavailable")
