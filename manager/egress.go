@@ -239,7 +239,7 @@ func (m *Manager) applyEgressRuntime(plan EgressPlan, checkOnly bool, state *egr
 		}
 		created = append(created, tag)
 	}
-	if err := registry.Replace(snapshot, func(tag string) bool { return obm.GetHandler(tag) != nil }); err != nil {
+	if err := registry.ReplacePersistent(snapshot, func(tag string) bool { return obm.GetHandler(tag) != nil }); err != nil {
 		rollback()
 		return err
 	}

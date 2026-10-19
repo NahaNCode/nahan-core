@@ -61,7 +61,7 @@ func ImportCredential(directory, coreID, credential string, key *rsa.PrivateKey,
 }
 
 // Transfer expiry limits delivery. Use of an already-delivered local credential
-// is separately authorized by the live route lease, not by extending delivery.
+// is separately authorized by the published route, not by extending delivery.
 func ReadCredential(directory, coreID, credential string, b CredentialBinding) (SSCredential, error) {
 	var result importedCredential
 	filename, err := credentialPath(directory, b)

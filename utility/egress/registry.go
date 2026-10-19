@@ -60,6 +60,16 @@ func Canonical(s Snapshot) (Snapshot, string, error) {
 }
 
 func (r *Registry) Replace(s Snapshot, available func(string) bool) error {
+	return r.replace(s, available, false)
+}
+
+// ReplacePersistent keeps a published routing decision until explicit replacement
+// or restriction. It does not change user or credential authorization lifetimes.
+func (r *Registry) ReplacePersistent(s Snapshot, available func(string) bool) error {
+	return r.replace(s, available, true)
+}
+
+func (r *Registry) replace(s Snapshot, available func(string) bool, persistent bool) error {
 	s, digest, err := Canonical(s)
 	if err != nil {
 		return err
@@ -86,6 +96,9 @@ func (r *Registry) Replace(s Snapshot, available func(string) bool) error {
 	r.revision, r.digest, r.bindings = s.Revision, digest, next
 	r.entries = entries
 	r.expires = time.Now().Add(time.Duration(s.LeaseSeconds) * time.Second)
+	if persistent {
+		r.expires = time.Time{}
+	}
 	return nil
 }
 
@@ -93,10 +106,10 @@ func (r *Registry) Replace(s Snapshot, available func(string) bool) error {
 func (r *Registry) Lookup(inbound string) (outbound string, managed, expired bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.lookup(inbound)
+	return r.lookup(inbound, time.Now())
 }
 
-func (r *Registry) lookup(inbound string) (outbound string, managed, expired bool) {
+func (r *Registry) lookup(inbound string, now time.Time) (outbound string, managed, expired bool) {
 	outbound, managed = r.bindings[inbound]
 	if !managed {
 		parts := strings.Split(inbound, "_")
@@ -108,7 +121,7 @@ func (r *Registry) lookup(inbound string) (outbound string, managed, expired boo
 			}
 		}
 	}
-	return outbound, managed, managed && !time.Now().Before(r.expires)
+	return outbound, managed, managed && !r.expires.IsZero() && !now.Before(r.expires)
 }
 
 // Acquire pins the selected immutable handler before a routing replacement can
@@ -121,7 +134,7 @@ func (r *Registry) Acquire(inbound string) (outbound string, managed, expired bo
 // AcquireObserved captures the revision under the same lock as route selection.
 func (r *Registry) AcquireObserved(inbound string) (outbound string, managed, expired bool, release func(), revision int64) {
 	r.mu.Lock()
-	outbound, managed, expired = r.lookup(inbound)
+	outbound, managed, expired = r.lookup(inbound, time.Now())
 	if managed {
 		revision = r.revision
 	}
@@ -193,7 +206,7 @@ func (r *Registry) HasBindings() bool {
 func (r *Registry) RestrictLease(until time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if until.Before(r.expires) {
+	if r.expires.IsZero() || until.Before(r.expires) {
 		r.expires = until
 	}
 }

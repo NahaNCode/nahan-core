@@ -32,6 +32,10 @@ func restoreExitRouting(c *controlplane.Client, config *manager.Config) error {
 	}
 	config.RestoredExitRoutes = &snapshot
 	config.ExitRoutesExpiresAt = state.ExpiresAt
+	config.PersistentExitRoutes = state.RoutePublication == "committed"
+	if state.RoutePublication != "" && state.RoutePublication != "committed" {
+		config.ExitRoutesExpiresAt = time.Unix(1, 0)
+	}
 	return nil
 }
 
@@ -57,12 +61,13 @@ func syncExitRouting(c *controlplane.Client, m *manager.Manager, config *manager
 		return err
 	}
 	deadline := time.Now().Add(time.Duration(snapshot.LeaseSeconds) * time.Second)
-	if err = egress.SaveState(exitStatePath(c), c.Config.CoreID, c.Key, egress.State{CoreID: c.Config.CoreID, ExpiresAt: deadline, Plan: json.RawMessage(document.PlanJSON)}); err != nil {
+	if err = egress.SaveState(exitStatePath(c), c.Config.CoreID, c.Key, egress.State{CoreID: c.Config.CoreID, ExpiresAt: deadline, Plan: json.RawMessage(document.PlanJSON), RoutePublication: "committed"}); err != nil {
 		m.RestrictExitRoutes(time.Now().Add(-time.Second))
 		_ = c.ExitRoutingReceipt(context.Background(), document, "exit_persistence_failed")
 		return err
 	}
 	config.RestoredExitRoutes = &snapshot
 	config.ExitRoutesExpiresAt = deadline
+	config.PersistentExitRoutes = true
 	return c.ExitRoutingReceipt(context.Background(), document, "")
 }

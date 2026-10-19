@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"dario.cat/mergo"
 	"github.com/r3labs/diff/v2"
@@ -184,7 +185,11 @@ func (m *Manager) Start() {
 		if err := m.ApplyEgress(*m.managerConfig.RestoredEgress); err != nil {
 			log.Panic("egress restore failed")
 		}
-		server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.RestrictLease(m.managerConfig.EgressExpiresAt)
+		if m.managerConfig.ControlPlane != nil && m.managerConfig.ControlPlane.HasCustomRouting {
+			server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.RestrictLease(time.Unix(1, 0))
+		} else if !m.managerConfig.PersistentEgress {
+			server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.RestrictLease(m.managerConfig.EgressExpiresAt)
+		}
 	}
 	// Load Nodes config
 	if m.managerConfig.RestoredExitRoutes != nil {
@@ -223,7 +228,11 @@ func (m *Manager) Start() {
 		if err := m.ApplyExitRoutes(*m.managerConfig.RestoredExitRoutes); err != nil {
 			log.Print("Destination exit restoration remains blocked")
 		}
-		m.RestrictExitRoutes(m.managerConfig.ExitRoutesExpiresAt)
+		if m.managerConfig.ControlPlane != nil && m.managerConfig.ControlPlane.HasCustomRouting {
+			m.RestrictExitRoutes(time.Unix(1, 0))
+		} else if !m.managerConfig.PersistentExitRoutes {
+			m.RestrictExitRoutes(m.managerConfig.ExitRoutesExpiresAt)
+		}
 	}
 	m.Running = true
 	return

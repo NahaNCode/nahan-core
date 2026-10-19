@@ -12,6 +12,8 @@ import (
 )
 
 type Config struct {
+	PersistentEgress        bool                                                              `mapstructure:"-"`
+	PersistentExitRoutes    bool                                                              `mapstructure:"-"`
 	ResolveExternalOutbound func(egress.ExternalBinding) (json.RawMessage, error)             `mapstructure:"-"`
 	PrincipalStore          *PrincipalStore                                                   `mapstructure:"-"`
 	ResolveEgressPrincipal  func(egress.PrincipalBinding) (egress.PrincipalCredential, error) `mapstructure:"-"`

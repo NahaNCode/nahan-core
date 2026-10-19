@@ -44,6 +44,40 @@ func TestExpiredBindingCannotBecomeUnmanaged(t *testing.T) {
 		t.Fatal("unrelated entry was captured")
 	}
 }
+
+func TestPublishedRoutingHasNoRefreshDeadlineButExplicitRestrictionsStillApply(t *testing.T) {
+	var r Registry
+	available := func(string) bool { return true }
+	if err := r.ReplacePersistent(snapshot(1, "old"), available); err != nil {
+		t.Fatal(err)
+	}
+	if tag, managed, blocked := r.lookup("entry-1", time.Now().Add(365*24*time.Hour)); tag != "old" || !managed || blocked {
+		t.Fatal("published route stopped solely because refresh was unavailable")
+	}
+	if err := r.ReplacePersistent(snapshot(1, "changed"), available); err == nil {
+		t.Fatal("same-revision replacement accepted")
+	}
+	r.RestrictLease(time.Now().Add(-time.Second))
+	if _, managed, blocked := r.Lookup("entry-1"); !managed || !blocked {
+		t.Fatal("persistent route bypassed explicit restriction")
+	}
+	r.RestrictLease(time.Now().Add(time.Hour))
+	if _, _, blocked := r.Lookup("entry-1"); !blocked {
+		t.Fatal("later restriction revived a blocked route")
+	}
+	if err := r.ReplacePersistent(snapshot(2, "new"), available); err != nil {
+		t.Fatal(err)
+	}
+	if tag, managed, blocked := r.Lookup("entry-1"); tag != "new" || !managed || blocked {
+		t.Fatal("explicit publication could not replace blocked route")
+	}
+	if err := r.ReplacePersistent(Snapshot{Revision: 3, LeaseSeconds: 30}, available); err != nil {
+		t.Fatal(err)
+	}
+	if r.HasBindings() {
+		t.Fatal("explicit withdrawal was ignored")
+	}
+}
 func TestRegistryConcurrentReadersAndAtomicReplacement(t *testing.T) {
 	var r Registry
 	available := func(string) bool { return true }

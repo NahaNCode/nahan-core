@@ -123,8 +123,27 @@ func TestEgressControlPreparePublishJournalRestartAndStalePlan(t *testing.T) {
 	}
 	defer restarted.Close()
 	restoredDispatcher := restarted.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher)
-	if _, managed, expired := restoredDispatcher.Egress.Lookup("Vless_8443_1"); !managed || !expired {
-		t.Fatal("restart changed entry became unmanaged or renewed lease")
+	if _, managed, expired := restoredDispatcher.Egress.Lookup("Vless_8443_1"); !managed || expired {
+		t.Fatal("committed route stopped after restart solely because its refresh timestamp passed")
+	}
+	if stored.RoutePublication != "committed" || !restartedConfig.PersistentEgress {
+		t.Fatal("successful route publication was not durably committed")
+	}
+	stored.RoutePublication = "prepared"
+	if err = egress.SaveState(filepath.Join(filepath.Dir(keyFile), "egress-state.bin"), coreID, client.Key, stored); err != nil {
+		t.Fatal(err)
+	}
+	interruptedConfig := &manager.Config{LogConfig: &manager.LogConfig{Level: "none"}}
+	if err = restoreEgress(client, interruptedConfig); err != nil {
+		t.Fatal(err)
+	}
+	interrupted := manager.New(interruptedConfig)
+	if err = interrupted.StartChecked(); err != nil {
+		t.Fatal(err)
+	}
+	defer interrupted.Close()
+	if _, managed, blocked := interrupted.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher).Egress.Lookup("Vless_443_1"); !managed || !blocked {
+		t.Fatal("uncommitted write-ahead plan became active after restart")
 	}
 	changed := plan
 	changed.Profiles = []manager.EgressProfile{{ID: "qa", Config: json.RawMessage(`{"protocol":"freedom","settings":{}}`)}}

@@ -33,11 +33,12 @@ snapshot, installs its handlers atomically, persists the snapshot encrypted, and
 acknowledges its exact revision and digest. The panel does not release the source
 publication until the destination has acknowledged the required rule.
 
-Rules have a short renewable lease. Expired, inactive, or restored-but-not-yet-
-confirmed selections reject new matching connections instead of falling back to
-the default IP. Established connections retain their handler during hot updates.
-Withdrawal retains the old selector until the source acknowledges its replacement;
-an offline or unauthorized source cannot keep renewing that selector.
+Starting with v1.6.12, successfully published rules persist across missed
+control-plane refreshes; see [Routing Availability](ROUTING-AVAILABILITY.md).
+Inactive, explicitly restricted or uncommitted restored selections still reject
+new matching connections instead of falling back to the default IP. Established
+connections retain their handler during hot updates. Explicit route changes and
+withdrawal remain revision guarded; control-plane silence alone is not withdrawal.
 
 The destination must have routing consent, a fresh report, an applied manifest,
 and the selected IP on an active local interface. No public SS firewall exposure,

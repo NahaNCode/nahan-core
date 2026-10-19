@@ -16,9 +16,10 @@ import (
 const maxStateBytes = 4 << 20
 
 type State struct {
-	CoreID    string          `json:"coreId"`
-	ExpiresAt time.Time       `json:"expiresAt"`
-	Plan      json.RawMessage `json:"plan"`
+	RoutePublication string          `json:"routePublication,omitempty"`
+	CoreID           string          `json:"coreId"`
+	ExpiresAt        time.Time       `json:"expiresAt"`
+	Plan             json.RawMessage `json:"plan"`
 }
 
 func stateCipher(coreID, credential string) (cipher.AEAD, error) {

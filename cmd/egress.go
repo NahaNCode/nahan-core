@@ -40,6 +40,10 @@ func restoreEgress(c *controlplane.Client, config *manager.Config) error {
 	}
 	config.RestoredEgress = &plan
 	config.EgressExpiresAt = state.ExpiresAt
+	config.PersistentEgress = state.RoutePublication == "committed"
+	if state.RoutePublication != "" && state.RoutePublication != "committed" {
+		config.EgressExpiresAt = time.Unix(1, 0)
+	}
 	return nil
 }
 
@@ -184,7 +188,8 @@ func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *mana
 	path := filepath.Join(filepath.Dir(c.Config.KeyFile), "egress-state.bin")
 	// Write-ahead persistence: crash recovery must never restore an unmanaged
 	// direct path for an inbound whose managed route was already published.
-	if err = egress.SaveState(path, c.Config.CoreID, c.Key, egress.State{CoreID: c.Config.CoreID, ExpiresAt: expires, Plan: []byte(document.PlanJSON)}); err != nil {
+	journal := egress.State{CoreID: c.Config.CoreID, ExpiresAt: expires, Plan: []byte(document.PlanJSON), RoutePublication: "prepared"}
+	if err = egress.SaveState(path, c.Config.CoreID, c.Key, journal); err != nil {
 		return c.EgressReceipt(context.Background(), "applied", document, "persistence_failed")
 	}
 	if err = m.ApplyEgress(plan); err != nil {
@@ -193,9 +198,19 @@ func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *mana
 		d := m.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher)
 		_ = d.Egress.Replace(blocked, func(string) bool { return true })
 		d.Egress.RestrictLease(time.Now().Add(-time.Second))
+		config.PersistentEgress = false
+		config.EgressExpiresAt = time.Unix(1, 0)
 		return c.EgressReceipt(context.Background(), "applied", document, "apply_failed")
+	}
+	journal.RoutePublication = "committed"
+	if err = egress.SaveState(path, c.Config.CoreID, c.Key, journal); err != nil {
+		m.RestrictManagedEgress(time.Now().Add(-time.Second))
+		config.PersistentEgress = false
+		config.EgressExpiresAt = time.Unix(1, 0)
+		return c.EgressReceipt(context.Background(), "applied", document, "persistence_failed")
 	}
 	config.RestoredEgress = &plan
 	config.EgressExpiresAt = expires
+	config.PersistentEgress = true
 	return c.EgressReceipt(context.Background(), "applied", document, "")
 }
