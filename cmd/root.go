@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -79,7 +80,13 @@ func getConfig() *viper.Viper {
 
 func run() error {
 	showVersion()
-	stopDiagnostics, err := startDiagnostics(os.Getenv("NAHAN_DIAGNOSTICS_SOCKET"))
+	var diagnosticPanel atomic.Pointer[controlplane.Client]
+	stopDiagnostics, err := startDiagnostics(os.Getenv("NAHAN_DIAGNOSTICS_SOCKET"), func() any {
+		if panel := diagnosticPanel.Load(); panel != nil {
+			return panel.ManagementStatus()
+		}
+		return map[string]any{}
+	})
 	if err != nil {
 		return fmt.Errorf("start local diagnostics: %w", err)
 	}
@@ -112,6 +119,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		diagnosticPanel.Store(panel)
 		policy, policyErr := routingpolicy.New(routingpolicy.Config{CoreID: panel.Config.CoreID, Key: panel.Key, Directory: filepath.Dir(panel.Config.KeyFile), RoutePath: managerConfig.RouteConfigPath, DNSPath: managerConfig.DnsConfigPath, InboundPath: managerConfig.InboundConfigPath, OutboundPath: managerConfig.OutboundConfigPath, LegacyAllowed: panel.Config.AllowManagedEgress})
 		if policyErr != nil {
 			return policyErr
@@ -134,7 +142,9 @@ func run() error {
 			}
 		}
 		panel.RoutingPolicyRefresh()
-		panel.SSTrial = m.SSTrial
+		panel.SSTrial = func(input json.RawMessage, coreID, jobID string) (entryprofile.SealedResult, error) {
+			return m.SSTrial(input, coreID, jobID)
+		}
 		managerConfig.PrincipalStore = manager.NewPrincipalStore(filepath.Join(filepath.Dir(panel.Config.KeyFile), "egress-destination-principals"), panel.Config.CoreID, panel.Key)
 		panel.PrincipalDurable = true
 		panel.PrincipalProvision = func(input json.RawMessage, coreID string) (entryprofile.SealedResult, error) {
@@ -220,110 +230,15 @@ func run() error {
 		}
 		m.Close()
 	}()
-	if panel != nil {
-		if err := syncEgress(panel, m, managerConfig); err != nil {
-			log.Warn("Egress synchronization unavailable")
-		}
-		if err := syncExitRouting(panel, m, managerConfig); err != nil {
-			log.Warn("Destination exit synchronization unavailable")
-		}
-		if err := panel.Heartbeat(context.Background(), version, manifest, startupError); err != nil {
-			log.Warn(err)
-		}
-	}
-
 	// Explicitly triggering GC to remove garbage from config loading.
 	runtime.GC()
-	// Running backend
-	osSignals := make(chan os.Signal, 1)
-	signal.Notify(osSignals, os.Interrupt, os.Kill, syscall.SIGTERM)
-	ticker := time.NewTicker(10 * time.Second)
-	var rejectedRevision int64
-	lastApplyError := startupError
-	defer ticker.Stop()
-	for {
-		select {
-		case <-osSignals:
-			return nil
-		case <-ticker.C:
-			if panel == nil {
-				continue
-			}
-			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
-				log.Warn("Live egress renewal unavailable before job polling")
-			}
-			if err := panel.ProcessJobs(context.Background()); err != nil {
-				log.Warn("Core job polling failed")
-			}
-			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
-				log.Warn("Live egress renewal unavailable before manifest polling")
-			}
-			next, err := panel.Manifest(context.Background())
-			if err != nil {
-				if errors.Is(err, controlplane.ErrUnauthorized) {
-					return err
-				}
-				log.Warn(err)
-				continue
-			}
-			if next.Revision != manifest.Revision && next.Revision != rejectedRevision {
-				candidate, prepareError := prepareManagedNodes(panel, next, template)
-				if prepareError != nil {
-					rejectedRevision = next.Revision
-					lastApplyError = "configuration preflight failed"
-				} else {
-					previous := managerConfig.NodesConfig
-					panel.CloseEgressPreflight()
-					panel.CloseEgressHealth()
-					m.Close()
-					managerConfig.NodesConfig = candidate
-					m = manager.New(managerConfig)
-					if err := m.StartChecked(); err != nil {
-						rejectedRevision = next.Revision
-						lastApplyError = "configuration rolled back"
-						for _, node := range previous {
-							if prepared, ok := node.PreparedAPI.(*nahan.PreparedClient); ok {
-								prepared.Reset()
-							}
-						}
-						managerConfig.NodesConfig = previous
-						m = manager.New(managerConfig)
-						if err := m.StartChecked(); err != nil {
-							return fmt.Errorf("managed rollback failed")
-						}
-					} else {
-						manifest = next
-						rejectedRevision = 0
-						lastApplyError = ""
-						if err := saveManagedSnapshot(panel, manifest, managerConfig.NodesConfig); err != nil {
-							lastApplyError = "snapshot persistence failed"
-						}
-					}
-				}
-			}
-			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
-				log.Warn("Live egress renewal unavailable before destination synchronization")
-			}
-			if err := syncExitRouting(panel, m, managerConfig); err != nil {
-				log.Warn("Destination exit synchronization unavailable")
-			}
-			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
-				log.Warn("Live egress renewal unavailable before heartbeat")
-			}
-			if err := panel.Heartbeat(context.Background(), version, manifest, lastApplyError); err != nil {
-				log.Warn(err)
-			}
-			if err := renewManagedEgressBeforeControlWork(panel, m, managerConfig); err != nil {
-				log.Warn("Live egress renewal unavailable before policy synchronization")
-			}
-			if err := syncPolicy(panel, m, managerConfig); err != nil {
-				log.Warn("Connection policy synchronization unavailable")
-			}
-			if err := syncEgress(panel, m, managerConfig); err != nil {
-				log.Warn("Egress synchronization unavailable")
-			}
-		}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if panel != nil {
+		return serveManagedControl(ctx, panel, &m, managerConfig, manifest, template, startupError)
 	}
+	<-ctx.Done()
+	return nil
 }
 
 func managedNodes(panel *controlplane.Client, manifest *controlplane.Manifest, template *controller.Config) []*manager.NodesConfig {
@@ -334,7 +249,12 @@ func managedNodes(panel *controlplane.Client, manifest *controlplane.Manifest, t
 	return nodes
 }
 
+var errManagedFetch = errors.New("managed node retrieval unavailable")
+
 func prepareManagedNodes(panel *controlplane.Client, manifest *controlplane.Manifest, template *controller.Config) (nodes []*manager.NodesConfig, err error) {
+	return prepareManagedNodesContext(context.Background(), panel, manifest, template)
+}
+func prepareManagedNodesContext(ctx context.Context, panel *controlplane.Client, manifest *controlplane.Manifest, template *controller.Config) (nodes []*manager.NodesConfig, err error) {
 	defer func() {
 		if recover() != nil {
 			err = fmt.Errorf("managed preflight failed")
@@ -342,14 +262,17 @@ func prepareManagedNodes(panel *controlplane.Client, manifest *controlplane.Mani
 	}()
 	nodes = managedNodes(panel, manifest, template)
 	for _, node := range nodes {
-		client := nahan.New(node.ApiConfig)
-		info, err := client.GetNodeInfo()
-		if err != nil {
-			return nil, fmt.Errorf("managed node fetch failed")
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		subscriptions, err := client.GetSubscriptionList()
+		client := nahan.New(node.ApiConfig)
+		info, err := client.GetNodeInfoContext(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("managed subscriptions fetch failed")
+			return nil, fmt.Errorf("%w: %w", errManagedFetch, err)
+		}
+		subscriptions, err := client.GetSubscriptionListContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", errManagedFetch, err)
 		}
 		config := template
 		if config == nil {

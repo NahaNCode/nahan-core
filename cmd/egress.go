@@ -61,6 +61,10 @@ func renewManagedEgressBeforeControlWork(c *controlplane.Client, m *manager.Mana
 }
 
 func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
+	return syncEgressContext(context.Background(), c, m, config)
+}
+
+func syncEgressContext(ctx context.Context, c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
 	if c.RoutingPolicyRefresh != nil {
 		c.RoutingPolicyRefresh()
 	}
@@ -70,7 +74,7 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		return errors.New("routing policy requires approval")
 	}
 	observeInstalledEgress(c, m, config)
-	state, err := c.Egress(context.Background())
+	state, err := c.Egress(ctx)
 	if err != nil {
 		return err
 	}
@@ -83,7 +87,7 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		if marshalErr == nil && json.Unmarshal([]byte(state.Desired.PlanJSON), &desired) == nil {
 			candidate, candidateErr := json.Marshal(desired)
 			if candidateErr == nil && string(current) == string(candidate) {
-				if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
+				if err = applyDesiredEgressContext(ctx, c, m, config, state.Desired); err != nil {
 					return err
 				}
 				liveRenewed = true
@@ -91,13 +95,13 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		}
 	}
 	if state.CredentialRuntimeVersion == 1 {
-		if err = c.SyncEgressCredentials(context.Background()); err != nil {
+		if err = c.SyncEgressCredentials(ctx); err != nil {
 			return err
 		}
 	}
 	// Renew/apply the live snapshot before starting any candidate path work.
 	if !liveRenewed {
-		if err = applyDesiredEgress(c, m, config, state.Desired); err != nil {
+		if err = applyDesiredEgressContext(ctx, c, m, config, state.Desired); err != nil {
 			return err
 		}
 	}
@@ -110,9 +114,9 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		}
 		if code != "" {
 			c.CloseEgressPreflight()
-			return c.EgressReceipt(context.Background(), "prepared", *state.Prepared, code)
+			return c.EgressReceipt(ctx, "prepared", *state.Prepared, code)
 		}
-		return c.PreparedReceipt(context.Background(), state.Prepared, func(ctx context.Context) error {
+		return c.PreparedReceipt(ctx, state.Prepared, func(ctx context.Context) error {
 			for _, profile := range plan.Profiles {
 				if profile.Principal != nil || profile.Secret != nil || profile.External != nil {
 					if err := m.ProbeEgressProfile(ctx, profile, c.ProbeViaSOCKS); err != nil {
@@ -123,7 +127,7 @@ func syncEgress(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 			return nil
 		})
 	}
-	return c.PreparedReceipt(context.Background(), nil, nil)
+	return c.PreparedReceipt(ctx, nil, nil)
 }
 
 func observeInstalledEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config) {
@@ -187,6 +191,10 @@ func observePublishedEgress(c *controlplane.Client, m *manager.Manager, document
 }
 
 func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *manager.Config, desired *controlplane.EgressDocument) error {
+	return applyDesiredEgressContext(context.Background(), c, m, config, desired)
+}
+
+func applyDesiredEgressContext(ctx context.Context, c *controlplane.Client, m *manager.Manager, config *manager.Config, desired *controlplane.EgressDocument) error {
 	if desired == nil {
 		return nil
 	}
@@ -194,13 +202,13 @@ func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *mana
 	var plan manager.EgressPlan
 	var err error
 	if json.Unmarshal([]byte(document.PlanJSON), &plan) != nil {
-		return c.EgressReceipt(context.Background(), "applied", document, "apply_failed")
+		return c.EgressReceipt(ctx, "applied", document, "apply_failed")
 	}
 	if config.RestoredEgress != nil && plan.Snapshot.Revision < config.RestoredEgress.Snapshot.Revision {
-		return c.EgressReceipt(context.Background(), "applied", document, "stale_plan")
+		return c.EgressReceipt(ctx, "applied", document, "stale_plan")
 	}
 	if err = m.CheckEgress(plan); err != nil {
-		return c.EgressReceipt(context.Background(), "applied", document, "apply_failed")
+		return c.EgressReceipt(ctx, "applied", document, "apply_failed")
 	}
 	expires := time.Now().Add(time.Duration(plan.Snapshot.LeaseSeconds) * time.Second)
 	path := filepath.Join(filepath.Dir(c.Config.KeyFile), "egress-state.bin")
@@ -208,7 +216,7 @@ func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *mana
 	// direct path for an inbound whose managed route was already published.
 	journal := egress.State{CoreID: c.Config.CoreID, ExpiresAt: expires, Plan: []byte(document.PlanJSON), RoutePublication: "prepared"}
 	if err = egress.SaveState(path, c.Config.CoreID, c.Key, journal); err != nil {
-		return c.EgressReceipt(context.Background(), "applied", document, "persistence_failed")
+		return c.EgressReceipt(ctx, "applied", document, "persistence_failed")
 	}
 	if err = m.ApplyEgress(plan); err != nil {
 		// The journaled candidate is blocked, not active, after a failed apply.
@@ -218,17 +226,17 @@ func applyDesiredEgress(c *controlplane.Client, m *manager.Manager, config *mana
 		d.Egress.RestrictLease(time.Now().Add(-time.Second))
 		config.PersistentEgress = false
 		config.EgressExpiresAt = time.Unix(1, 0)
-		return c.EgressReceipt(context.Background(), "applied", document, "apply_failed")
+		return c.EgressReceipt(ctx, "applied", document, "apply_failed")
 	}
 	journal.RoutePublication = "committed"
 	if err = egress.SaveState(path, c.Config.CoreID, c.Key, journal); err != nil {
 		m.RestrictManagedEgress(time.Now().Add(-time.Second))
 		config.PersistentEgress = false
 		config.EgressExpiresAt = time.Unix(1, 0)
-		return c.EgressReceipt(context.Background(), "applied", document, "persistence_failed")
+		return c.EgressReceipt(ctx, "applied", document, "persistence_failed")
 	}
 	config.RestoredEgress = &plan
 	config.EgressExpiresAt = expires
 	config.PersistentEgress = true
-	return c.EgressReceipt(context.Background(), "applied", document, "")
+	return c.EgressReceipt(ctx, "applied", document, "")
 }

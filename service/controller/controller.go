@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NahaNCode/nahan-core/api"
@@ -27,6 +28,7 @@ import (
 )
 
 type Controller struct {
+	closed               atomic.Bool
 	monitorMu            sync.Mutex
 	retiredSubscriptions []api.SubscriptionInfo
 	server               *core.Instance
@@ -184,6 +186,9 @@ func (c *Controller) Start() error {
 
 // Close implement the Close() function of the service interface
 func (c *Controller) Close() error {
+	if c.closed.Swap(true) {
+		return nil
+	}
 	for i := range c.tasks {
 		if c.tasks[i].Periodic != nil {
 			if err := c.tasks[i].Periodic.Close(); err != nil {
@@ -192,10 +197,11 @@ func (c *Controller) Close() error {
 		}
 	}
 
-	if c.subscriptionList != nil {
-		if err := c.userInfoMonitor(); err != nil {
-			log.Print("final traffic snapshot failed")
-		}
+	if err := c.snapshotUserInfo(true); err != nil {
+		log.Print("final traffic snapshot failed")
+	}
+	if sender, ok := c.apiClient.(interface{ CloseTraffic() }); ok {
+		sender.CloseTraffic()
 	}
 	return nil
 }
@@ -203,6 +209,9 @@ func (c *Controller) Close() error {
 func (c *Controller) nodeInfoMonitor() (err error) {
 	c.monitorMu.Lock()
 	defer c.monitorMu.Unlock()
+	if c.closed.Load() {
+		return fmt.Errorf("controller stopped")
+	}
 	// delay to start
 	_, managed := c.apiClient.(interface{ AuthorizationLease() time.Time })
 	if !managed && time.Since(c.startAt) < time.Duration(60)*time.Second {
@@ -557,9 +566,18 @@ func compareSubscriptionList(old, new *[]api.SubscriptionInfo) (deleted, added [
 }
 
 func (c *Controller) userInfoMonitor() (err error) {
+	return c.snapshotUserInfo(false)
+}
+func (c *Controller) snapshotUserInfo(final bool) (err error) {
 	c.monitorMu.Lock()
 	defer c.monitorMu.Unlock()
-	if source, ok := c.apiClient.(interface{ DeviceGate() api.DeviceGate }); ok {
+	if c.subscriptionList == nil {
+		return nil
+	}
+	if c.closed.Load() && !final {
+		return fmt.Errorf("controller stopped")
+	}
+	if source, ok := c.apiClient.(interface{ DeviceGate() api.DeviceGate }); ok && !final {
 		if gate := source.DeviceGate(); gate != nil {
 			if err := gate.RenewDevices(); err != nil {
 				log.Print("device lease renewal failed")
@@ -609,8 +627,14 @@ func (c *Controller) userInfoMonitor() (err error) {
 				c.retiredSubscriptions = nil
 			}
 		}
-		if err := durable.FlushTraffic(); err != nil {
-			log.Print(err)
+		if !final {
+			flush := durable.FlushTraffic
+			if sender, ok := c.apiClient.(interface{ ScheduleTraffic() error }); ok {
+				flush = sender.ScheduleTraffic
+			}
+			if err := flush(); err != nil {
+				log.Print(err)
+			}
 		}
 	} else if len(subscriptionTraffic) > 0 {
 		var err error // Define an empty error
@@ -625,6 +649,9 @@ func (c *Controller) userInfoMonitor() (err error) {
 		}
 	}
 
+	if final {
+		return nil
+	}
 	// Report Online info
 	if onlineDevice, err := c.GetOnlineDevice(c.Tag); err != nil {
 		log.Print(err)

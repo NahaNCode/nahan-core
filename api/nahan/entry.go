@@ -97,6 +97,7 @@ func (c *PreparedClient) GetSubscriptionList() (*[]api.SubscriptionInfo, error) 
 	return list, err
 }
 func (c *PreparedClient) Reset() {
+	c.APIClient.resetTraffic()
 	if list, err := c.APIClient.GetSubscriptionList(); err == nil {
 		c.Subscriptions = list
 	} else if err.Error() != api.SubscriptionNotModified {

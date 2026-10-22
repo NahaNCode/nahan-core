@@ -69,17 +69,20 @@ func persistPolicy(c *controlplane.Client, p connectionpolicy.Snapshot) error {
 	return os.Rename(f.Name(), policyPath(c))
 }
 func syncPolicy(c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
-	p, err := c.ConnectionPolicy(context.Background())
+	return syncPolicyContext(context.Background(), c, m, config)
+}
+func syncPolicyContext(ctx context.Context, c *controlplane.Client, m *manager.Manager, config *manager.Config) error {
+	p, err := c.ConnectionPolicy(ctx)
 	if err != nil {
 		return err
 	}
 	current := config.ConnectionPolicy
 	if p.Revision < current.Revision {
-		return c.PolicyReceipt(context.Background(), p.Revision, "stale_policy")
+		return c.PolicyReceipt(ctx, p.Revision, "stale_policy")
 	}
 	if p.Revision != current.Revision {
 		if err = persistPolicy(c, p); err != nil {
-			return c.PolicyReceipt(context.Background(), p.Revision, "persistence_failed")
+			return c.PolicyReceipt(ctx, p.Revision, "persistence_failed")
 		}
 		// The validated snapshot swap does not rebuild handlers or close any sessions.
 		d := m.Server.GetFeature(routing.DispatcherType()).(*xdispatcher.DefaultDispatcher)
@@ -88,5 +91,5 @@ func syncPolicy(c *controlplane.Client, m *manager.Manager, config *manager.Conf
 		}
 		config.ConnectionPolicy = p
 	}
-	return c.PolicyReceipt(context.Background(), p.Revision, "")
+	return c.PolicyReceipt(ctx, p.Revision, "")
 }

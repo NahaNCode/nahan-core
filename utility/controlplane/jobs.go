@@ -27,6 +27,9 @@ func (c *Client) ProcessJobs(ctx context.Context) error {
 		return err
 	}
 	for _, job := range jobs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		result := map[string]any{"valid": false, "engineVersion": core.Version(), "code": "job_rejected"}
 		if job.Kind == "routing-policy-inspect" && c.RoutingPolicyReport != nil {
 			result["routingPolicy"] = c.RoutingPolicyReport()

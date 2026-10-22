@@ -17,6 +17,7 @@ type egressHealth struct {
 	document   *EgressDocument
 	cancel     context.CancelFunc
 	running    bool
+	done       chan struct{}
 	cursor     int
 	wake       chan struct{}
 	check      func(context.Context) []EgressHealthResult
@@ -47,7 +48,6 @@ func (c *Client) EgressHealthBatch(total, limit int) []int {
 func (c *Client) ObserveEgress(document *EgressDocument, check func(context.Context) []EgressHealthResult) {
 	h := &c.health
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if document == nil {
 		if h.cancel != nil {
 			h.cancel()
@@ -55,8 +55,14 @@ func (c *Client) ObserveEgress(document *EgressDocument, check func(context.Cont
 		h.document = nil
 		h.generation++
 		h.running = false
+		done := h.done
+		h.mu.Unlock()
+		if done != nil {
+			<-done
+		}
 		return
 	}
+	defer h.mu.Unlock()
 	if document.Validate() != nil || check == nil {
 		return
 	}
@@ -76,6 +82,8 @@ func (c *Client) ObserveEgress(document *EgressDocument, check func(context.Cont
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	h.running = true
+	h.done = make(chan struct{})
+	done := h.done
 	h.generation++
 	generation := h.generation
 	h.wake = make(chan struct{}, 1)
@@ -86,6 +94,7 @@ func (c *Client) ObserveEgress(document *EgressDocument, check func(context.Cont
 	}
 	go func() {
 		defer cancel()
+		defer close(done)
 		for ctx.Err() == nil {
 			h.mu.Lock()
 			if h.generation != generation || h.document == nil {
