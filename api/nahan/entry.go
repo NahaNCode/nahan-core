@@ -66,8 +66,16 @@ type PreparedClient struct {
 	*APIClient
 	Node              *api.NodeInfo
 	Subscriptions     *[]api.SubscriptionInfo
+	Rules             *[]api.DetectRule
 	nodeRead          bool
 	subscriptionsRead bool
+}
+
+func (c *PreparedClient) GetNodeRule() (*[]api.DetectRule, error) {
+	if c.Rules != nil {
+		return c.Rules, nil
+	}
+	return c.APIClient.GetNodeRule()
 }
 
 func (c *PreparedClient) GetNodeInfo() (*api.NodeInfo, error) {

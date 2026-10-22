@@ -410,12 +410,20 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	ruleList := c.LocalRuleList
 
-	routes := c.resp.Load().(*serverConfig).Routes
+	config, ok := c.resp.Load().(*serverConfig)
+	if !ok || config == nil {
+		return nil, fmt.Errorf("node rules unavailable")
+	}
+	routes := config.Routes
 
 	for i := range routes {
+		pattern, err := regexp.Compile(routes[i].Regex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid node rule")
+		}
 		ruleListItem := api.DetectRule{
 			ID:      routes[i].Id,
-			Pattern: regexp.MustCompile(routes[i].Regex),
+			Pattern: pattern,
 		}
 		ruleList = append(ruleList, ruleListItem)
 	}
