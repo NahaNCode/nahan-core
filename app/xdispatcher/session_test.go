@@ -12,7 +12,8 @@ import (
 	"github.com/xtls/xray-core/common/buf"
 	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/session"
-	"github.com/xtls/xray-core/common/singbridge"
+	"github.com/xtls/xray-core/features/policy"
+	ss "github.com/xtls/xray-core/proxy/shadowsocks_2022"
 	"github.com/xtls/xray-core/transport"
 )
 
@@ -31,7 +32,7 @@ func TestDownstreamEOFInterruptsPhysicalInbound(t *testing.T) {
 	})
 	finished := make(chan struct{})
 	go func() {
-		singbridge.CopyConn(ctx, inbound, link, server)
+		ss.TransportTCP(ctx, policy.Session{Timeouts: policy.Timeout{ConnectionIdle: time.Hour}}, link.Reader, link.Writer, &transport.Link{Reader: buf.NewReader(server), Writer: buf.NewWriter(server)})
 		close(finished)
 	}()
 	go func() { io.Copy(remote, remote) }()

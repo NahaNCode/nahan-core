@@ -81,7 +81,7 @@ outbox guides below for service setup and accounting behavior.
 
 ## Build and documentation
 
-Use the Go version in `go.mod` (Go 1.26 or newer) and the pinned patch tool:
+Use the reviewed Go 1.27.3 toolchain in `go.mod` and the pinned patch tool:
 
 ```sh
 git clone https://github.com/NahaNCode/nahan-core.git

@@ -78,7 +78,7 @@ func (c *Controller) buildSSUser(subscriptionInfo *[]api.SubscriptionInfo, metho
 			e := c.buildUserTag(&subscription)
 			userKey, err := c.checkShadowsocksPassword(subscription.Passwd, method)
 			if err != nil {
-				newError(fmt.Errorf("[UID: %d] %s", subscription.UID, err)).AtError()
+				newError(fmt.Errorf("[UID: %d] %s", subscription.UID, err))
 				continue
 			}
 			subscriptions[i] = &protocol.User{
@@ -109,7 +109,7 @@ func (c *Controller) buildSSPluginUser(subscriptionInfo *[]api.SubscriptionInfo,
 			e := c.buildUserTag(&subscription)
 			userKey, err := c.checkShadowsocksPassword(subscription.Passwd, method)
 			if err != nil {
-				newError(fmt.Errorf("[UID: %d] %s", subscription.UID, err)).AtError()
+				newError(fmt.Errorf("[UID: %d] %s", subscription.UID, err))
 				continue
 			}
 			subscriptions[i] = &protocol.User{

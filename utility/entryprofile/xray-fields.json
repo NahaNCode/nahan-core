@@ -339,33 +339,6 @@
           }
         },
         {
-          "name": "congestion",
-          "schema": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "up",
-          "schema": {
-            "kind": "ref",
-            "ref": "Bandwidth"
-          }
-        },
-        {
-          "name": "down",
-          "schema": {
-            "kind": "ref",
-            "ref": "Bandwidth"
-          }
-        },
-        {
-          "name": "udphop",
-          "schema": {
-            "kind": "ref",
-            "ref": "UdpHop"
-          }
-        },
-        {
           "name": "udpIdleTimeout",
           "schema": {
             "kind": "number",
@@ -588,6 +561,149 @@
         }
       ]
     },
+    "MasqueConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "host",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "path",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "user",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "pass",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "headers",
+          "schema": {
+            "kind": "map",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "warp",
+          "schema": {
+            "kind": "ref",
+            "ref": "MasqueWarpConfig"
+          }
+        },
+        {
+          "name": "xmux",
+          "schema": {
+            "kind": "ref",
+            "ref": "XmuxConfig"
+          }
+        }
+      ]
+    },
+    "MasqueServerConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "users",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "MasqueUserConfig"
+            }
+          }
+        },
+        {
+          "name": "clients",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "ref",
+              "ref": "MasqueUserConfig"
+            }
+          }
+        },
+        {
+          "name": "address",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "mtu",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        }
+      ]
+    },
+    "MasqueUserConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "pass",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "level",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "email",
+          "schema": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "MasqueWarpConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "privateKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "publicKey",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "address",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        }
+      ]
+    },
     "Masquerade": {
       "kind": "object",
       "fields": [
@@ -611,6 +727,12 @@
         },
         {
           "name": "rewriteHost",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "xForwarded",
           "schema": {
             "kind": "boolean"
           }
@@ -681,10 +803,9 @@
           }
         },
         {
-          "name": "udpHop",
+          "name": "brutalDisableLossCompensation",
           "schema": {
-            "kind": "ref",
-            "ref": "UdpHop"
+            "kind": "boolean"
           }
         },
         {
@@ -736,10 +857,28 @@
           }
         },
         {
+          "name": "disableChromeParrot",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "name": "disableGSO",
+          "schema": {
+            "kind": "boolean"
+          }
+        },
+        {
           "name": "maxIncomingStreams",
           "schema": {
             "kind": "number",
             "integer": true
+          }
+        },
+        {
+          "name": "disableStatelessReset",
+          "schema": {
+            "kind": "boolean"
           }
         }
       ]
@@ -1560,6 +1699,20 @@
           }
         },
         {
+          "name": "masqueSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "MasqueConfig"
+          }
+        },
+        {
+          "name": "xdriveSettings",
+          "schema": {
+            "kind": "ref",
+            "ref": "XDriveConfig"
+          }
+        },
+        {
           "name": "sockopt",
           "schema": {
             "kind": "ref",
@@ -1766,6 +1919,12 @@
             "kind": "ref",
             "ref": "SocketConfig"
           }
+        },
+        {
+          "name": "useSystemCA",
+          "schema": {
+            "kind": "boolean"
+          }
         }
       ]
     },
@@ -1937,22 +2096,20 @@
           "schema": {
             "kind": "string"
           }
-        }
-      ]
-    },
-    "UdpHop": {
-      "kind": "object",
-      "fields": [
+        },
         {
-          "name": "ports",
+          "name": "autoSystemDnsToGateway",
           "schema": {
-            "kind": "range"
+            "kind": "boolean"
           }
         },
         {
-          "name": "interval",
+          "name": "autoSystemWfpBlockLeak",
           "schema": {
-            "kind": "range"
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
           }
         }
       ]
@@ -2193,9 +2350,12 @@
           }
         },
         {
-          "name": "domainStrategy",
+          "name": "remoteDNS",
           "schema": {
-            "kind": "string"
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
           }
         }
       ]
@@ -2252,6 +2412,101 @@
         }
       ]
     },
+    "XDriveConfig": {
+      "kind": "object",
+      "fields": [
+        {
+          "name": "remoteFolder",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "service",
+          "schema": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "secrets",
+          "schema": {
+            "kind": "array",
+            "item": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "segmentBytes",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "flushIntervalMs",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "pollIntervalMs",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "maxPollIntervalMs",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "sessionTtlSeconds",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "concurrency",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "eagerWindowMs",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "holeTimeoutMs",
+          "schema": {
+            "kind": "number",
+            "integer": true
+          }
+        },
+        {
+          "name": "template",
+          "schema": {
+            "kind": "json"
+          }
+        },
+        {
+          "name": "xmux",
+          "schema": {
+            "kind": "ref",
+            "ref": "XmuxConfig"
+          }
+        }
+      ]
+    },
     "XmuxConfig": {
       "kind": "object",
       "fields": [
@@ -2299,6 +2554,7 @@
     "dokodemo-door": "DokodemoConfig",
     "http": "HTTPServerConfig",
     "hysteria": "HysteriaServerConfig",
+    "masque": "MasqueServerConfig",
     "mixed": "SocksServerConfig",
     "shadowsocks": "ShadowsocksServerConfig",
     "socks": "SocksServerConfig",
@@ -2309,6 +2565,6 @@
     "vmess": "VMessInboundConfig",
     "wireguard": "WireGuardConfig"
   },
-  "sourceDigest": "77ee3c68e66ec70106268765f7fc87c00b024964f3265ac2ac5a1faf93c25554",
-  "version": "26.7.28"
+  "sourceDigest": "ab6ce528e5919317012df34c57d9f40b5e91d566a2b82982c0d4a56e1539fbb2",
+  "version": "26.10.21"
 }
