@@ -135,7 +135,7 @@ func (c *Controller) Start() error {
 	// Add Rule Manager
 
 	if ruleList, err := c.apiClient.GetNodeRule(); err != nil {
-		log.Printf("Get rule list filed: %s", err)
+		return fmt.Errorf("node enforcement rules unavailable")
 	} else if len(*ruleList) > 0 {
 		if err := c.UpdateRule(c.Tag, *ruleList); err != nil {
 			log.Print(err)
