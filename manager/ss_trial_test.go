@@ -138,6 +138,11 @@ func TestSSTrialIndependentPasswordIdempotenceAndExpiry(t *testing.T) {
 func mustPort(uri *url.URL) int { var port int; fmt.Sscan(uri.Port(), &port); return port }
 
 func TestSSTrialBindCollisionCleansOnlyFailedCandidate(t *testing.T) {
+	fixtureKey := make([]byte, 16)
+	if _, err := rand.Read(fixtureKey); err != nil {
+		t.Fatal(err)
+	}
+	fixturePassword := base64.StdEncoding.EncodeToString(fixtureKey)
 	m := New(&Config{LogConfig: &LogConfig{Level: "none"}})
 	if err := m.StartChecked(); err != nil {
 		t.Fatal(err)
@@ -150,7 +155,7 @@ func TestSSTrialBindCollisionCleansOnlyFailedCandidate(t *testing.T) {
 	defer busy.Close()
 	build := func(port int) *core.InboundHandlerConfig {
 		t.Helper()
-		raw := fmt.Sprintf(`{"protocol":"shadowsocks","tag":"trial-collision-regression","listen":"127.0.0.1","port":%d,"settings":{"method":"2022-blake3-aes-128-gcm","password":"BwcHBwcHBwcHBwcHBwcHBw==","network":"tcp"}}`, port)
+		raw := fmt.Sprintf(`{"protocol":"shadowsocks","tag":"trial-collision-regression","listen":"127.0.0.1","port":%d,"settings":{"method":"2022-blake3-aes-128-gcm","password":"%s","network":"tcp"}}`, port, fixturePassword)
 		var config conf.InboundDetourConfig
 		if err := json.Unmarshal([]byte(raw), &config); err != nil {
 			t.Fatal(err)
