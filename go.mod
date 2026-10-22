@@ -21,7 +21,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/refraction-networking/utls v1.8.3-0.20260301010127-aa6edf4b11af
 	github.com/sagernet/sing v0.7.14
-	github.com/sagernet/sing-shadowsocks v0.2.7
+	github.com/sagernet/sing-shadowsocks v0.2.9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.21.0
