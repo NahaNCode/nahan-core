@@ -116,14 +116,15 @@ type RelayNodeInfo struct {
 }
 
 type SubscriptionInfo struct {
-	UID         int
-	ServiceID   int
-	DeviceID    int
-	Email       string
-	Passwd      string
-	SpeedLimit  uint64
-	DeviceLimit int
-	UUID        string
+	GlobalIPLimit bool
+	UID           int
+	ServiceID     int
+	DeviceID      int
+	Email         string
+	Passwd        string
+	SpeedLimit    uint64
+	DeviceLimit   int
+	UUID          string
 }
 
 type OnlineIP struct {
@@ -141,6 +142,14 @@ type DeviceGate interface {
 	ValidDevice(int) bool
 	TouchDevice(int)
 	RenewDevices() error
+}
+
+// IPGate coordinates legacy shared credentials; it never replaces authentication.
+type IPGate interface {
+	AdmitIP(int, string) bool
+	ValidIP(int, string) bool
+	TouchIP(int, string)
+	RenewIPs() error
 }
 
 type SubscriptionTraffic struct {

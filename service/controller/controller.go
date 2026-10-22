@@ -584,6 +584,9 @@ func (c *Controller) snapshotUserInfo(final bool) (err error) {
 			}
 		}
 	}
+	if gate,ok:=c.apiClient.(api.IPGate);ok && !final {
+		if err:=gate.RenewIPs();err!=nil {log.Print("IP lease renewal failed")}
+	}
 	// Get Subscription traffic
 	var subscriptionTraffic []api.SubscriptionTraffic
 	var snapshots []trafficSnapshot
