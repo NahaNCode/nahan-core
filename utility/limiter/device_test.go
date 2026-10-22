@@ -113,3 +113,23 @@ func TestDeviceModeWithoutGateFailsClosed(t *testing.T) {
 		t.Fatal("missing device gate failed open")
 	}
 }
+
+func TestSharedCredentialAndRegisteredDeviceUseSameServiceRate(t *testing.T) {
+	l := New()
+	gate := &testDeviceGate{allowed: map[int]bool{12: true}, seen: map[int]bool{}}
+	users := []api.SubscriptionInfo{
+		{UID: 5, ServiceID: 5, Email: "shared", SpeedLimit: 1000},
+		{UID: 12, ServiceID: 5, DeviceID: 12, Email: "device", SpeedLimit: 1000},
+	}
+	if err := l.AddInboundLimiter("a", 0, &users, nil, gate); err != nil {
+		t.Fatal(err)
+	}
+	shared, _, reject := l.GetUserBucket("a", "a|shared|5", "192.0.2.1")
+	if reject {
+		t.Fatal("shared credential rejected")
+	}
+	device, _, reject := l.GetUserBucket("a", "a|device|12", "192.0.2.1")
+	if reject || shared != device {
+		t.Fatal("shared and registered credentials multiplied the service rate")
+	}
+}

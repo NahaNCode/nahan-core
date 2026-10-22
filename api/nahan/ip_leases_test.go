@@ -110,7 +110,7 @@ func TestManagedIPSubscriptionIsOptInAndPreservesLegacyIdentity(t *testing.T) {
 	}
 	rows[0].GlobalIPLimit = false
 	users, err = c.ParseSubscriptionList(&rows)
-	if err != nil || (*users)[0].GlobalIPLimit {
+	if err != nil || (*users)[0].GlobalIPLimit || (*users)[0].ServiceID != 8 {
 		t.Fatal("opt-out not preserved")
 	}
 }
