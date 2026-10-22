@@ -103,7 +103,7 @@ func (m *Manager) SSTrial(input json.RawMessage, coreID, jobID string) (entrypro
 		if err != nil {
 			return empty, errors.New("trial rejected")
 		}
-		if err = core.AddInboundHandler(m.Server, built); err != nil {
+		if err = addSSTrialInbound(m.Server, built); err != nil {
 			continue
 		}
 		payload.Profile = raw
@@ -135,4 +135,28 @@ func (m *Manager) SSTrial(input json.RawMessage, coreID, jobID string) (entrypro
 		return sealed, nil
 	}
 	return empty, errors.New("no trial port available")
+}
+
+// Upstream registers a tag before starting the handler. A bind failure must
+// remove only our failed candidate, or every later port retry sees that tag.
+func addSSTrialInbound(server *core.Instance, config *core.InboundHandlerConfig) error {
+	raw, err := core.CreateObject(server, config)
+	if err != nil {
+		return err
+	}
+	candidate, ok := raw.(inbound.Handler)
+	if !ok {
+		return errors.New("invalid trial handler")
+	}
+	handlers := server.GetFeature(inbound.ManagerType()).(inbound.Manager)
+	if err = handlers.AddHandler(context.Background(), candidate); err != nil {
+		registered, lookup := handlers.GetHandler(context.Background(), candidate.Tag())
+		if lookup == nil && registered == candidate {
+			_ = handlers.RemoveHandler(context.Background(), candidate.Tag())
+		} else {
+			_ = candidate.Close()
+		}
+		return err
+	}
+	return nil
 }
