@@ -14,7 +14,7 @@ to GitHub and the panel; no inbound customer ports are opened by this installer.
    The same pinned, checksum-verified command is:
 
 ```sh
-(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/92e92c2c5fb8311da3a8b3925e5896c40db4944b/install.sh -o "$work/install.sh" && printf '444cd3d7b55667b92bab52fdfeb197ae1c7b70c6b0a6c07611cb3cf34e9eb92f  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
+(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/8ed4838e345f8e0e6c90805d8b80fb9bd51d385f/install.sh -o "$work/install.sh" && printf 'e761b5c1a17fa28a0c06b01a43b8fb7aadbd4ca1eb5677175d78a5d7051130ae  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
 ```
 
 3. At `CONFIGURATION`, click **Copy settings** in the panel, paste into the
