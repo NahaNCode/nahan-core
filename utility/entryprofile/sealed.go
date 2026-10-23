@@ -23,6 +23,42 @@ type SealedResult struct {
 	Nonce      string `json:"nonce"`
 }
 
+// Open authenticates the recipient and the caller-supplied domain binding.
+func Open(envelope SealedResult, recipient *rsa.PrivateKey, scope string) ([]byte, error) {
+	if recipient == nil || len(envelope.Ciphertext) > 12000 || len(envelope.WrappedKey) > 1024 || len(envelope.Nonce) > 32 {
+		return nil, errors.New("invalid sealed envelope")
+	}
+	wrapped, err := base64.StdEncoding.DecodeString(envelope.WrappedKey)
+	if err != nil {
+		return nil, errors.New("invalid sealed envelope")
+	}
+	key, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, recipient, wrapped, nil)
+	if err != nil || len(key) != 32 {
+		return nil, errors.New("recipient mismatch")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, errors.New("invalid sealed envelope")
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce, err := base64.StdEncoding.DecodeString(envelope.Nonce)
+	if err != nil || len(nonce) != gcm.NonceSize() {
+		return nil, errors.New("invalid sealed envelope")
+	}
+	data, err := base64.StdEncoding.DecodeString(envelope.Ciphertext)
+	if err != nil || len(data) > 8192 {
+		return nil, errors.New("invalid sealed envelope")
+	}
+	plain, err := gcm.Open(nil, nonce, data, []byte(scope))
+	if err != nil {
+		return nil, errors.New("sealed envelope authentication failed")
+	}
+	return plain, nil
+}
+
 func Seal(data []byte, publicKey, scope string) (SealedResult, error) {
 	var result SealedResult
 	encoded, err := base64.StdEncoding.DecodeString(publicKey)

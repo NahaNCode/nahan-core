@@ -166,7 +166,7 @@ type HeartbeatState struct {
 }
 
 func (c *Client) SendHeartbeat(ctx context.Context, version string, state HeartbeatState) error {
-	err := c.request(ctx, "POST", "heartbeat", map[string]any{"runtimeArch": runtime.GOOS + "-" + runtime.GOARCH, "runtimeBuild": updater.RunningDigest(), "updateRuntimeVersion": boolRuntime(updater.Available(c.Config.CoreID)), "hostPlacement": c.hostPlacement(ctx), "version": version, "revision": state.Revision, "nodeIds": state.NodeIDs, "lastError": state.LastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
+	err := c.request(ctx, "POST", "heartbeat", map[string]any{"secretTransferRuntimeVersion": 1, "runtimeArch": runtime.GOOS + "-" + runtime.GOARCH, "runtimeBuild": updater.RunningDigest(), "updateRuntimeVersion": boolRuntime(updater.Available(c.Config.CoreID)), "hostPlacement": c.hostPlacement(ctx), "version": version, "revision": state.Revision, "nodeIds": state.NodeIDs, "lastError": state.LastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
 		"transitRuntimeVersion": 1, "routingPolicy": state.RoutingPolicy, "xrayVersion": core.Version(), "migrationRuntimeVersion": 1, "customRoutingEnabled": state.CustomRouting, "controlHealth": c.ManagementStatus(), "controlEndpoint": strings.TrimRight(c.Config.APIHost, "/") + "/api/core/v1/cores/" + c.Config.CoreID + "/heartbeat", "reportIntervalSeconds": 10}, nil)
 	if err == nil && updater.Available(c.Config.CoreID) && state.LastError == "" {
 		updater.Atomic(filepath.Join(filepath.Dir(c.Config.KeyFile), "update-heartbeat-"+c.Config.CoreID+".json"), updater.Receipt{CoreID: c.Config.CoreID, Revision: state.Revision, Digest: updater.RunningDigest(), Version: version, SeenAt: time.Now().Unix()})

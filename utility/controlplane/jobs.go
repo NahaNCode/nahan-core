@@ -75,6 +75,32 @@ func (c *Client) ProcessJobs(ctx context.Context) error {
 					}
 				}
 			}
+		} else if job.Kind == "entry-secret-export" || job.Kind == "entry-secret-import" {
+			var payload struct {
+				Scope     entryprofile.SecretTransferScope `json:"scope"`
+				PublicKey string                           `json:"publicKey"`
+				Sealed    entryprofile.SealedResult        `json:"sealed"`
+			}
+			if json.Unmarshal(job.Payload, &payload) == nil {
+				if job.Kind == "entry-secret-export" {
+					sealed, err := entryprofile.ExportSecret(c.SecretDirectory(), c.Config.CoreID, job.ID, payload.PublicKey, payload.Scope)
+					if err == nil {
+						result["valid"], result["code"] = true, ""
+						result["ciphertext"], result["wrappedKey"], result["nonce"] = sealed.Ciphertext, sealed.WrappedKey, sealed.Nonce
+					}
+				} else {
+					key, _, err := egress.RecipientIdentity(filepath.Join(filepath.Dir(c.Config.KeyFile), "egress-recipient.key"))
+					if err == nil {
+						metadata, err := entryprofile.ImportSecret(c.SecretDirectory(), c.Config.CoreID, job.ID, key, payload.Scope, payload.Sealed)
+						if err == nil {
+							for key, value := range metadata {
+								result[key] = value
+							}
+							result["valid"], result["code"] = true, ""
+						}
+					}
+				}
+			}
 		} else if job.Kind == "preflight" {
 			profile, err := entryprofile.Resolve(job.Payload, c.SecretDirectory(), c.Config.CoreID)
 			if err == nil {
