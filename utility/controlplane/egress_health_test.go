@@ -73,8 +73,8 @@ func TestEgressHealthCancelsWithdrawnPublication(t *testing.T) {
 	c.CloseEgressHealth()
 	select {
 	case <-finished:
-	case <-time.After(time.Second):
-		t.Fatal("worker did not cancel")
+	default:
+		t.Fatal("close returned before observer stopped")
 	}
 	bad := document
 	bad.Digest = "tampered"

@@ -48,6 +48,7 @@ type Client struct {
 	http                 *http.Client
 	preflight            egressPreflight
 	health               egressHealth
+	management           managementHealth
 }
 
 var ErrUnauthorized = errors.New("core authentication revoked")
@@ -78,7 +79,9 @@ func New(config *Config) (*Client, error) {
 	}
 	return &Client{Config: config, Key: key, http: &http.Client{Transport: routes, Timeout: paneltls.RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
-func (c *Client) request(ctx context.Context, method, resource string, body any, out any) error {
+func (c *Client) request(ctx context.Context, method, resource string, body any, out any) (result error) {
+	started := time.Now()
+	defer func() { c.management.record(resource, started, result) }()
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -107,7 +110,7 @@ func (c *Client) request(ctx context.Context, method, resource string, body any,
 		return ErrUnauthorized
 	}
 	if res.StatusCode != 200 {
-		return fmt.Errorf("control plane status %d", res.StatusCode)
+		return &StatusError{Code: res.StatusCode}
 	}
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
@@ -132,6 +135,12 @@ func (c *Client) Manifest(ctx context.Context) (*Manifest, error) {
 	return &manifest, nil
 }
 func (c *Client) Heartbeat(ctx context.Context, version string, manifest *Manifest, lastError string) error {
+	return c.SendHeartbeat(ctx, version, c.CaptureHeartbeat(manifest, lastError))
+}
+
+// CaptureHeartbeat runs on the serialized engine owner, never on the sender.
+// The returned value contains no mutable engine/configuration references.
+func (c *Client) CaptureHeartbeat(manifest *Manifest, lastError string) HeartbeatState {
 	if c.RoutingPolicyRefresh != nil {
 		c.RoutingPolicyRefresh()
 	}
@@ -143,10 +152,24 @@ func (c *Client) Heartbeat(ctx context.Context, version string, manifest *Manife
 	for _, node := range manifest.Nodes {
 		ids = append(ids, node.ID)
 	}
-	err := c.request(ctx, "POST", "heartbeat", map[string]any{"runtimeArch": runtime.GOOS + "-" + runtime.GOARCH, "runtimeBuild": updater.RunningDigest(), "updateRuntimeVersion": boolRuntime(updater.Available(c.Config.CoreID)), "hostPlacement": c.hostPlacement(ctx), "version": version, "revision": manifest.Revision, "nodeIds": ids, "lastError": lastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
-		"transitRuntimeVersion": 1, "routingPolicy": policy, "xrayVersion": core.Version(), "migrationRuntimeVersion": 1, "customRoutingEnabled": c.Config.HasCustomRouting, "controlEndpoint": strings.TrimRight(c.Config.APIHost, "/") + "/api/core/v1/cores/" + c.Config.CoreID + "/heartbeat", "reportIntervalSeconds": 10}, nil)
-	if err == nil && updater.Available(c.Config.CoreID) && lastError == "" {
-		updater.Atomic(filepath.Join(filepath.Dir(c.Config.KeyFile), "update-heartbeat-"+c.Config.CoreID+".json"), updater.Receipt{CoreID: c.Config.CoreID, Revision: manifest.Revision, Digest: updater.RunningDigest(), Version: version, SeenAt: time.Now().Unix()})
+	encoded, _ := json.Marshal(policy)
+	return HeartbeatState{Revision: manifest.Revision, NodeIDs: ids, LastError: lastError, RoutingPolicy: encoded, CustomRouting: c.Config.HasCustomRouting}
+
+}
+
+type HeartbeatState struct {
+	Revision      int64
+	NodeIDs       []int
+	LastError     string
+	RoutingPolicy json.RawMessage
+	CustomRouting bool
+}
+
+func (c *Client) SendHeartbeat(ctx context.Context, version string, state HeartbeatState) error {
+	err := c.request(ctx, "POST", "heartbeat", map[string]any{"runtimeArch": runtime.GOOS + "-" + runtime.GOARCH, "runtimeBuild": updater.RunningDigest(), "updateRuntimeVersion": boolRuntime(updater.Available(c.Config.CoreID)), "hostPlacement": c.hostPlacement(ctx), "version": version, "revision": state.Revision, "nodeIds": state.NodeIDs, "lastError": state.LastError, "entryRuntimeVersion": 1, "ssTestRuntimeVersion": 2,
+		"transitRuntimeVersion": 1, "routingPolicy": state.RoutingPolicy, "xrayVersion": core.Version(), "migrationRuntimeVersion": 1, "customRoutingEnabled": state.CustomRouting, "controlHealth": c.ManagementStatus(), "controlEndpoint": strings.TrimRight(c.Config.APIHost, "/") + "/api/core/v1/cores/" + c.Config.CoreID + "/heartbeat", "reportIntervalSeconds": 10}, nil)
+	if err == nil && updater.Available(c.Config.CoreID) && state.LastError == "" {
+		updater.Atomic(filepath.Join(filepath.Dir(c.Config.KeyFile), "update-heartbeat-"+c.Config.CoreID+".json"), updater.Receipt{CoreID: c.Config.CoreID, Revision: state.Revision, Digest: updater.RunningDigest(), Version: version, SeenAt: time.Now().Unix()})
 	}
 	return err
 }

@@ -65,7 +65,7 @@ func (r *Manager) Detect(tag string, destination string, email string) (reject b
 			l := strings.Split(email, "|")
 			uid, err := strconv.Atoi(l[len(l)-1])
 			if err != nil {
-				newError(fmt.Sprintf("Record illegal behavior failed! Cannot find subscription's uid: %s", email)).AtDebug()
+				newError(fmt.Sprintf("Record illegal behavior failed! Cannot find subscription's uid: %s", email))
 				return reject
 			}
 			newSet := mapset.NewSetWith(api.DetectResult{UID: uid, RuleID: hitRuleID})

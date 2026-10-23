@@ -13,11 +13,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.27.3'
       - name: Test pinned runtime and build
         env:
           CGO_ENABLED: 0
+          NAHAN_REQUIRE_REDIS_TESTS: 1
+        run: |
+          command -v redis-server || (sudo apt-get update && sudo apt-get install -y redis-server)
+          MODFILE=$(go run ./tools/xray-patch)
+          go test -p 2 -modfile="$MODFILE" ./utility/entryprofile ./utility/controlplane ./utility/egress ./utility/exitroute ./utility/routingpolicy ./utility/update ./utility/limiter ./utility/paneltls ./utility/outbox ./api/nahan ./service/controller ./manager ./cmd ./app/xdispatcher ./internal/regression ./tools/xray-patch ./tools/entry-schema
+          go build -modfile="$MODFILE" -trimpath -ldflags="-s -w" -o /tmp/NahaN .
+      - name: Check managed control and reporting races
+        env:
+          CGO_ENABLED: 1
         run: |
           MODFILE=$(go run ./tools/xray-patch)
-          go test -p 2 -modfile="$MODFILE" ./utility/entryprofile ./utility/controlplane ./utility/egress ./utility/exitroute ./utility/routingpolicy ./utility/update ./utility/limiter ./api/nahan ./service/controller ./manager ./cmd ./app/xdispatcher ./internal/regression
-          go build -modfile="$MODFILE" -trimpath -ldflags="-s -w" -o /tmp/NahaN .
+          go test -race -p 1 -modfile="$MODFILE" ./utility/limiter ./utility/controlplane ./utility/paneltls ./utility/outbox ./api/nahan ./service/controller ./cmd

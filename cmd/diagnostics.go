@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 )
 
 // Profiles contain sensitive runtime data; never expose them on a TCP listener.
-func startDiagnostics(socketPath string) (func(), error) {
+func startDiagnostics(socketPath string, status ...func() any) (func(), error) {
 	if socketPath == "" {
 		return func() {}, nil
 	}
@@ -27,6 +28,16 @@ func startDiagnostics(socketPath string) (func(), error) {
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	if len(status) > 0 {
+		mux.HandleFunc("/debug/control-plane", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(status[0]())
+		})
+	}
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)

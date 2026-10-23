@@ -7,8 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
+
+const pinnedXray = "v1.260327.1-0.20261021115930-1b1647cd9ddf"
+
+type change struct{ file, old, replacement string }
 
 func main() {
 	if err := generate(); err != nil {
@@ -18,73 +23,52 @@ func main() {
 }
 
 func generate() error {
+	if !supportedToolchain(runtime.Version()) {
+		return fmt.Errorf("review Xray TLS layouts and security fixes for toolchain %s; use Go 1.27.3", runtime.Version())
+	}
 	data, err := exec.Command("go", "list", "-m", "-json", "github.com/xtls/xray-core").Output()
 	if err != nil {
 		return err
 	}
 	var module struct{ Dir, Version string }
-	if err := json.Unmarshal(data, &module); err != nil {
+	if err = json.Unmarshal(data, &module); err != nil {
 		return err
 	}
-	if module.Version != "v1.260327.1-0.20260728075948-5ca6f4b7d4dc" {
+	if module.Version != pinnedXray {
 		return fmt.Errorf("review lifecycle fixes for new Xray version %s", module.Version)
 	}
 	if module.Dir == "" {
-		download, err := exec.Command("go", "mod", "download", "-json", "github.com/xtls/xray-core@"+module.Version).Output()
+		data, err = exec.Command("go", "mod", "download", "-json", "github.com/xtls/xray-core@"+module.Version).Output()
 		if err != nil {
-			return fmt.Errorf("download pinned Xray: %w", err)
-		}
-		var fetched struct {
-			Dir   string
-			Error string
-		}
-		if err = json.Unmarshal(download, &fetched); err != nil {
 			return err
 		}
-		if fetched.Dir == "" || fetched.Error != "" {
+		if err = json.Unmarshal(data, &module); err != nil {
+			return err
+		}
+		if module.Dir == "" {
 			return fmt.Errorf("pinned Xray source unavailable")
 		}
-		module.Dir = fetched.Dir
 	}
 	dir, err := os.MkdirTemp("", "nahan-xray-patch-")
 	if err != nil {
 		return err
 	}
-	changes := []struct{ file, old, replacement string }{
-		{"common/singbridge/packet.go", "func (w *PacketConnWrapper) Close() error {", "func (w *PacketConnWrapper) Close() error {\n\tif w.T != nil { w.T.SetTimeout(0) }"},
-		{"proxy/shadowsocks_2022/inbound.go", "return bufio.CopyPacketConn(ctx, conn, outConn)", "defer outConn.T.SetTimeout(0)\n\treturn bufio.CopyPacketConn(ctx, conn, outConn)"},
-		{"common/singbridge/packet.go", "return M.Socksaddr{}, nil", "return M.Socksaddr{}, err"},
-		{"common/singbridge/pipe.go", "func (w *PipeConnWrapper) Close() error {\n\treturn nil", "func (w *PipeConnWrapper) Close() error {\n\tw.T.SetTimeout(0)\n\treturn nil"},
-		{"common/singbridge/pipe.go", "conn.T = signal.CancelAfterInactivity(ctx, cancel, 300*time.Second)", "conn.T = signal.CancelAfterInactivity(ctx, cancel, 300*time.Second)\n\tdefer conn.T.SetTimeout(0)"},
-		{"proxy/shadowsocks_2022/outbound.go", "if session.TimeoutOnlyFromContext(ctx) {", "defer connection.Close()\n\n\tif session.TimeoutOnlyFromContext(ctx) {"},
-		{"proxy/shadowsocks_2022/outbound.go", "serverConn := o.method.DialPacketConn(connection)", "if wrapper, ok := packetConn.(*singbridge.PacketConnWrapper); ok {\n\t\t\tdefer wrapper.T.SetTimeout(0)\n\t\t}\n\n\t\tserverConn := o.method.DialPacketConn(connection)"},
-	}
-	// Keep live pointers GC-visible and reject incompatible TLS connection layouts.
-	for _, file := range []string{"proxy/vless/inbound/inbound.go", "proxy/vless/outbound/outbound.go"} {
-		for _, change := range []struct{ old, replacement string }{
-			{"var p uintptr", "var p unsafe.Pointer"},
-			{"p = uintptr(unsafe.Pointer(commonConn))", "p = unsafe.Pointer(commonConn)"},
-			{"p = uintptr(unsafe.Pointer(tlsConn.Conn))", "p = unsafe.Pointer(tlsConn.Conn)"},
-			{"p = uintptr(unsafe.Pointer(realityConn.Conn))", "p = unsafe.Pointer(realityConn.Conn)"},
-			{"i, _ := t.FieldByName(\"input\")", "i, inputOK := t.FieldByName(\"input\")"},
-			{"r, _ := t.FieldByName(\"rawInput\")", "r, rawOK := t.FieldByName(\"rawInput\")\n if !inputOK || !rawOK || i.Type != reflect.TypeOf(bytes.Reader{}) || r.Type != reflect.TypeOf(bytes.Buffer{}) { return errors.New(\"XTLS connection layout not supported\").AtWarning() }"},
-			{"unsafe.Pointer(p + i.Offset)", "unsafe.Add(p, i.Offset)"},
-			{"unsafe.Pointer(p + r.Offset)", "unsafe.Add(p, r.Offset)"},
-		} {
-			changes = append(changes, struct{ file, old, replacement string }{file, change.old, change.replacement})
+	ok := false
+	defer func() {
+		if !ok {
+			os.RemoveAll(dir)
 		}
-	}
-	changes = append(changes, struct{ file, old, replacement string }{"proxy/vless/outbound/outbound.go", "p = uintptr(unsafe.Pointer(utlsConn.Conn))", "p = unsafe.Pointer(utlsConn.Conn)"})
-	patchedModule := filepath.Join(dir, "xray")
+	}()
+	patched := filepath.Join(dir, "xray")
 	err = filepath.WalkDir(module.Dir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		relative, err := filepath.Rel(module.Dir, path)
+		rel, err := filepath.Rel(module.Dir, path)
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(patchedModule, relative)
+		target := filepath.Join(patched, rel)
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0700)
 		}
@@ -97,29 +81,24 @@ func generate() error {
 	if err != nil {
 		return err
 	}
-	for _, change := range changes {
-		input := filepath.Join(patchedModule, change.file)
-		content, err := os.ReadFile(input)
+	// Native SS2022 replaced singbridge. Preserve cleanup on every return.
+	changes := []change{
+		{"proxy/shadowsocks_2022/outbound.go", "\tctx, cancel := context.WithCancel(ctx)\n", "\tctx, cancel := context.WithCancel(ctx)\n\tdefer cancel()\n\tdefer common.Interrupt(link.Reader)\n\tdefer common.Interrupt(link.Writer)\n\tif newCancel != nil { defer newCancel() }\n"},
+		{"proxy/shadowsocks_2022/outbound.go", "\tctx = policy.ContextWithBufferPolicy(ctx, sessionPolicy.Buffer)", "\tdefer timer.SetTimeout(0)\n\tctx = policy.ContextWithBufferPolicy(ctx, sessionPolicy.Buffer)"},
+		{"proxy/shadowsocks_2022/stream.go", "\tctx, cancel := context.WithCancel(ctx)\n", "\tctx, cancel := context.WithCancel(ctx)\n\tdefer cancel()\n"},
+	}
+	for _, c := range changes {
+		path := filepath.Join(patched, c.file)
+		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		if strings.Count(string(content), change.old) != 1 {
-			return fmt.Errorf("patch anchor mismatch: %s", change.file)
+		if strings.Count(string(content), c.old) != 1 {
+			return fmt.Errorf("patch anchor mismatch: %s", c.file)
 		}
-		if err := os.WriteFile(input, []byte(strings.Replace(string(content), change.old, change.replacement, 1)), 0600); err != nil {
+		if err = os.WriteFile(path, []byte(strings.Replace(string(content), c.old, c.replacement, 1)), 0600); err != nil {
 			return err
 		}
-	}
-	regression, err := os.ReadFile("internal/regression/udp_test.go")
-	if err != nil {
-		return err
-	}
-	testDir := filepath.Join(patchedModule, "internal", "nahanregression")
-	if err := os.MkdirAll(testDir, 0700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(testDir, "udp_test.go"), regression, 0600); err != nil {
-		return err
 	}
 	modfile := filepath.Join(dir, "build.mod")
 	for source, target := range map[string]string{"go.mod": modfile, "go.sum": filepath.Join(dir, "build.sum")} {
@@ -127,14 +106,16 @@ func generate() error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(target, content, 0600); err != nil {
+		if err = os.WriteFile(target, content, 0600); err != nil {
 			return err
 		}
 	}
-	command := exec.Command("go", "mod", "edit", "-modfile="+modfile, "-replace=github.com/xtls/xray-core="+patchedModule)
-	if output, err := command.CombinedOutput(); err != nil {
+	if output, err := exec.Command("go", "mod", "edit", "-modfile="+modfile, "-replace=github.com/xtls/xray-core="+patched).CombinedOutput(); err != nil {
 		return fmt.Errorf("prepare patched module: %w: %s", err, output)
 	}
+	ok = true
 	fmt.Println(modfile)
 	return nil
 }
+
+func supportedToolchain(version string) bool { return version == "go1.27.3" }

@@ -306,7 +306,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 
 	if user != nil && len(user.Email) > 0 {
 		// Speed Limit and Device Limit
-		bucket, ok, reject := d.Limiter.GetUserBucket(sessionInbound.Tag, user.Email, sessionInbound.Source.Address.IP().String())
+		bucket, _, reject := d.Limiter.GetUserBucket(sessionInbound.Tag, user.Email, sessionInbound.Source.Address.IP().String())
 		if reject {
 			errors.LogWarning(ctx, "Subscription admission rejected")
 			common.Close(outboundLink.Writer)
@@ -315,7 +315,9 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			common.Interrupt(inboundLink.Reader)
 			return nil, nil, errors.New("Subscription admission rejected")
 		}
-		valid := func() bool { return d.Limiter.DeviceValid(sessionInbound.Tag, user.Email) }
+		valid := func() bool {
+			return d.Limiter.ConnectionValid(sessionInbound.Tag, user.Email, sessionInbound.Source.Address.IP().String())
+		}
 		stop := func() {
 			common.Interrupt(outboundLink.Reader)
 			common.Interrupt(outboundLink.Writer)
@@ -325,7 +327,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 		// Check inside the rate wrappers as well, after any throttling wait.
 		inboundLink.Writer = &activityWriter{Writer: inboundLink.Writer, valid: valid, stop: stop}
 		outboundLink.Writer = &activityWriter{Writer: outboundLink.Writer, valid: valid, stop: stop}
-		if ok {
+		if bucket != nil {
 			inboundLink.Writer = d.Limiter.RateWriterContext(inboundLink.Writer, bucket, ctx, valid)
 			outboundLink.Writer = d.Limiter.RateWriterContext(outboundLink.Writer, bucket, ctx, valid)
 		}
@@ -510,16 +512,18 @@ func (d *DefaultDispatcher) wrapLink(ctx context.Context, link *transport.Link) 
 	if user == nil || user.Email == "" {
 		return link
 	}
-	bucket, limited, reject := d.Limiter.GetUserBucket(inbound.Tag, user.Email, inbound.Source.Address.IP().String())
+	bucket, _, reject := d.Limiter.GetUserBucket(inbound.Tag, user.Email, inbound.Source.Address.IP().String())
 	if reject {
 		owned.Interrupt()
 		common.Interrupt(link.Writer)
 		return link
 	}
-	valid := func() bool { return d.Limiter.DeviceValid(inbound.Tag, user.Email) }
+	valid := func() bool {
+		return d.Limiter.ConnectionValid(inbound.Tag, user.Email, inbound.Source.Address.IP().String())
+	}
 	stop := func() { owned.Interrupt(); common.Interrupt(link.Writer) }
 	link.Writer = &activityWriter{Writer: link.Writer, valid: valid, stop: stop}
-	if limited {
+	if bucket != nil {
 		reader.Reader = d.Limiter.RateReader(reader.Reader, bucket, ctx, valid)
 		link.Writer = d.Limiter.RateWriterContext(link.Writer, bucket, ctx, valid)
 	}

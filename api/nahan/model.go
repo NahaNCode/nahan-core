@@ -127,16 +127,17 @@ type SubscriptionResponse struct {
 }
 
 type Subscription struct {
-	Id          int     `json:"id"`
-	ServiceID   int     `json:"serviceId"`
-	DeviceID    int     `json:"deviceId"`
-	DeviceLimit int     `json:"deviceLimit"`
-	Uuid        string  `json:"uuid"`
-	Email       string  `json:"email"`
-	Passwd      string  `json:"passwd"`
-	Speedlimit  float64 `json:"speedlimit"`
-	Iplimit     int     `json:"iplimit"`
-	Ipcount     int     `json:"ipcount"`
+	GlobalIPLimit bool    `json:"globalIpLimit"`
+	Id            int     `json:"id"`
+	ServiceID     int     `json:"serviceId"`
+	DeviceID      int     `json:"deviceId"`
+	DeviceLimit   int     `json:"deviceLimit"`
+	Uuid          string  `json:"uuid"`
+	Email         string  `json:"email"`
+	Passwd        string  `json:"passwd"`
+	Speedlimit    float64 `json:"speedlimit"`
+	Iplimit       int     `json:"iplimit"`
+	Ipcount       int     `json:"ipcount"`
 }
 
 // Response is the common response

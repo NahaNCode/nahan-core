@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NahaNCode/nahan-core/api"
@@ -23,9 +25,24 @@ type deviceCredential struct {
 }
 
 type deviceLeases struct {
-	mu      sync.Mutex
-	renewMu sync.Mutex
-	entries map[int]*deviceLease
+	mu          sync.Mutex
+	renewMu     sync.Mutex
+	entries     map[int]*deviceLease
+	requests    chan struct{}
+	unavailable atomic.Uint64
+	saturated   atomic.Uint64
+	denied      atomic.Uint64
+	renewCursor int
+}
+
+type DeviceLeaseDiagnostics struct {
+	Unavailable uint64 `json:"unavailable"`
+	Saturated   uint64 `json:"saturated"`
+	Denied      uint64 `json:"denied"`
+}
+
+func (c *APIClient) DeviceLeaseDiagnostics() DeviceLeaseDiagnostics {
+	return DeviceLeaseDiagnostics{c.devices.unavailable.Load(), c.devices.saturated.Load(), c.devices.denied.Load()}
 }
 
 func (c *APIClient) DeviceGate() api.DeviceGate {
@@ -66,7 +83,7 @@ func (c *APIClient) AdmitDevice(id int) bool {
 	}
 	entry.pending = make(chan struct{})
 	c.devices.mu.Unlock()
-	_ = c.fetchDeviceLeases([]int{id})
+	_ = c.fetchDeviceLeases(context.Background(), []int{id})
 	c.finishDeviceRequests([]int{id})
 	return c.ValidDevice(id)
 }
@@ -100,6 +117,8 @@ func (c *APIClient) TouchDevice(id int) {
 func (c *APIClient) RenewDevices() error {
 	c.devices.renewMu.Lock()
 	defer c.devices.renewMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	c.devices.mu.Lock()
 	var ids []int
 	for id, e := range c.devices.entries {
@@ -112,9 +131,18 @@ func (c *APIClient) RenewDevices() error {
 			ids = append(ids, id)
 		}
 	}
+	sort.Ints(ids)
+	if len(ids) > 0 {
+		offset := c.devices.renewCursor % len(ids)
+		ids = append(ids[offset:], ids[:offset]...)
+	}
 	c.devices.mu.Unlock()
 	var failures []error
 	for start := 0; start < len(ids); start += 512 {
+		if ctx.Err() != nil {
+			failures = append(failures, errors.New("device renewal budget exhausted"))
+			break
+		}
 		end := start + 512
 		if end > len(ids) {
 			end = len(ids)
@@ -131,16 +159,37 @@ func (c *APIClient) RenewDevices() error {
 		if len(batch) == 0 {
 			continue
 		}
-		if err := c.fetchDeviceLeases(batch); err != nil {
+		if err := c.fetchDeviceLeases(ctx, batch); err != nil {
 			failures = append(failures, err)
 		}
 		c.finishDeviceRequests(batch)
+		c.devices.mu.Lock()
+		c.devices.renewCursor = (c.devices.renewCursor + end - start) % len(ids)
+		c.devices.mu.Unlock()
 	}
 	return errors.Join(failures...)
 }
 
-func (c *APIClient) fetchDeviceLeases(ids []int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func (c *APIClient) fetchDeviceLeases(parent context.Context, ids []int) (result error) {
+	defer func() {
+		if result != nil {
+			c.devices.unavailable.Add(1)
+		}
+	}()
+	c.devices.mu.Lock()
+	if c.devices.requests == nil {
+		c.devices.requests = make(chan struct{}, 8)
+	}
+	requests := c.devices.requests
+	c.devices.mu.Unlock()
+	select {
+	case requests <- struct{}{}:
+		defer func() { <-requests }()
+	default:
+		c.devices.saturated.Add(1)
+		return errors.New("device lease request capacity reached")
+	}
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	res, err := c.client.Clone().SetRetryCount(0).R().SetContext(ctx).
 		SetBody(struct {
@@ -192,5 +241,6 @@ func (c *APIClient) fetchDeviceLeases(ids []int) error {
 			e.expires = expires[id]
 		}
 	}
+	c.devices.denied.Add(uint64(len(reply.Denied)))
 	return nil
 }

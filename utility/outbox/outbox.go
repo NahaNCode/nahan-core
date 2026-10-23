@@ -4,6 +4,7 @@ package outbox
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,15 +21,21 @@ type Report struct {
 }
 
 type Queue struct {
-	dir string
-	mu  sync.Mutex
+	dir      string
+	mu       sync.Mutex
+	flushMu  sync.Mutex
+	maxBytes int64
 }
+
+const MaxBytes int64 = 64 << 20
+const maxReportBytes int64 = 4 << 20
+const flushBatch = 64
 
 func Open(dir string) (*Queue, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	return &Queue{dir: dir}, nil
+	return &Queue{dir: dir, maxBytes: MaxBytes}, nil
 }
 
 func (q *Queue) syncDir() error {
@@ -74,6 +81,21 @@ func (q *Queue) Enqueue(traffic []api.SubscriptionTraffic) error {
 	if err != nil {
 		return err
 	}
+	limit := q.maxBytes
+	if limit <= 0 {
+		limit = MaxBytes
+	}
+	var used int64
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		used += info.Size()
+	}
+	if int64(len(data)) > maxReportBytes || used+int64(len(data)) > limit {
+		return fmt.Errorf("traffic outbox byte limit; retaining live counters")
+	}
 	f, err := os.CreateTemp(q.dir, ".pending-")
 	if err != nil {
 		return err
@@ -99,21 +121,31 @@ func (q *Queue) Enqueue(traffic []api.SubscriptionTraffic) error {
 
 // Flush stops at the first error, retaining the original ID and payload for replay.
 func (q *Queue) Flush(send func(Report) error) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	// A slow network send must not block persistence of newly captured counters.
+	q.flushMu.Lock()
+	defer q.flushMu.Unlock()
 	entries, err := os.ReadDir(q.dir)
 	if err != nil {
 		return err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	sent := 0
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		path := filepath.Join(q.dir, entry.Name())
-		data, err := os.ReadFile(path)
+		file, err := os.Open(path)
 		if err != nil {
 			return err
+		}
+		data, err := io.ReadAll(io.LimitReader(file, MaxBytes+1))
+		file.Close()
+		if err != nil {
+			return err
+		}
+		if int64(len(data)) > MaxBytes {
+			return fmt.Errorf("oversized outbox report retained")
 		}
 		var r Report
 		if err = json.Unmarshal(data, &r); err != nil {
@@ -130,6 +162,10 @@ func (q *Queue) Flush(send func(Report) error) error {
 		}
 		if err = q.syncDir(); err != nil {
 			return err
+		}
+		sent++
+		if sent >= flushBatch {
+			break
 		}
 	}
 	return nil

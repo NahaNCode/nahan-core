@@ -14,7 +14,9 @@ import (
 	"github.com/NahaNCode/nahan-core/app/xdispatcher"
 	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/inbound"
 	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/infra/conf"
 	"io"
 	"net"
 	"net/url"
@@ -134,3 +136,61 @@ func TestSSTrialIndependentPasswordIdempotenceAndExpiry(t *testing.T) {
 	}
 }
 func mustPort(uri *url.URL) int { var port int; fmt.Sscan(uri.Port(), &port); return port }
+
+func TestSSTrialBindCollisionCleansOnlyFailedCandidate(t *testing.T) {
+	fixtureKey := make([]byte, 16)
+	if _, err := rand.Read(fixtureKey); err != nil {
+		t.Fatal(err)
+	}
+	fixturePassword := base64.StdEncoding.EncodeToString(fixtureKey)
+	m := New(&Config{LogConfig: &LogConfig{Level: "none"}})
+	if err := m.StartChecked(); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	build := func(port int) *core.InboundHandlerConfig {
+		t.Helper()
+		raw := fmt.Sprintf(`{"protocol":"shadowsocks","tag":"trial-collision-regression","listen":"127.0.0.1","port":%d,"settings":{"method":"2022-blake3-aes-128-gcm","password":"%s","network":"tcp"}}`, port, fixturePassword)
+		var config conf.InboundDetourConfig
+		if err := json.Unmarshal([]byte(raw), &config); err != nil {
+			t.Fatal(err)
+		}
+		built, err := config.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return built
+	}
+	if addSSTrialInbound(m.Server, build(busy.Addr().(*net.TCPAddr).Port)) == nil {
+		t.Fatal("busy port accepted")
+	}
+	handlers := m.Server.GetFeature(inbound.ManagerType()).(inbound.Manager)
+	if _, err := handlers.GetHandler(context.Background(), "trial-collision-regression"); err == nil {
+		t.Fatal("failed bind left a registered tag")
+	}
+	reservation, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := reservation.Addr().(*net.TCPAddr).Port
+	reservation.Close()
+	if err := addSSTrialInbound(m.Server, build(port)); err != nil {
+		t.Fatal("retry could not use a free port", err)
+	}
+	original, err := handlers.GetHandler(context.Background(), "trial-collision-regression")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addSSTrialInbound(m.Server, build(busy.Addr().(*net.TCPAddr).Port)) == nil {
+		t.Fatal("duplicate live tag accepted")
+	}
+	retained, err := handlers.GetHandler(context.Background(), "trial-collision-regression")
+	if err != nil || retained != original {
+		t.Fatal("failed candidate removed a different live handler", err)
+	}
+}

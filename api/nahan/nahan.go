@@ -2,6 +2,7 @@ package nahan
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 )
 
 type APIClient struct {
+	ips                   ipLeases
 	devices               deviceLeases
 	deviceCredentials     map[int]deviceCredential
 	deviceEmailSequence   uint64
@@ -36,8 +38,10 @@ type APIClient struct {
 	appliedAuthorization  atomic.Int64
 	authorizationDeadline atomic.Int64
 	reportFailed          atomic.Bool
+	queueFailed           atomic.Bool
 	outbox                *outbox.Queue
 	outboxErr             error
+	traffic               trafficWorker
 	client                *resty.Client
 	APIHost               string
 	NodeID                int
@@ -58,6 +62,9 @@ func New(apiConfig *api.Config) *APIClient {
 		client.SetTimeout(5 * time.Second)
 	}
 	client.OnError(func(req *resty.Request, err error) {
+		if apiConfig.Protocol == "nahan-v1" {
+			return
+		}
 		if v, ok := err.(*resty.ResponseError); ok {
 			// v.Response contains the last response from the server
 			// v.Err contains the original error
@@ -66,6 +73,8 @@ func New(apiConfig *api.Config) *APIClient {
 	})
 	client.SetBaseURL(apiConfig.APIHost)
 	if apiConfig.Protocol == "nahan-v1" {
+		// The verified transport owns retries; Resty must not replay ambiguous writes.
+		client.SetRetryCount(0)
 		transport, err := paneltls.Transport(apiConfig.APIHost, apiConfig.CAFile, apiConfig.ServerName)
 		if err != nil {
 			panic(err)
@@ -130,7 +139,9 @@ func (c *APIClient) ReportHeartbeat() error {
 		}
 	}
 	lastError := ""
-	if c.reportFailed.Load() {
+	if c.queueFailed.Load() {
+		lastError = "traffic persistence failed"
+	} else if c.reportFailed.Load() {
 		lastError = "report delivery failed"
 	}
 	res, err := c.client.R().SetBody(map[string]interface{}{
@@ -192,10 +203,16 @@ func (c *APIClient) assembleURL(path string) string {
 
 func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (*simplejson.Json, error) {
 	if err != nil {
+		if c.protocol == "nahan-v1" {
+			return nil, fmt.Errorf("native API unavailable: %w", err)
+		}
 		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
 	}
 
 	if res.StatusCode() >= 400 {
+		if c.protocol == "nahan-v1" {
+			return nil, fmt.Errorf("native API status %d", res.StatusCode())
+		}
 		body := res.Body()
 		return nil, fmt.Errorf("request %s failed: %s, %v", c.assembleURL(path), string(body), err)
 	}
@@ -203,6 +220,9 @@ func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (
 	rtn, err := simplejson.NewJson(res.Body())
 
 	if err != nil {
+		if c.protocol == "nahan-v1" {
+			return nil, errors.New("invalid native API response")
+		}
 		return nil, fmt.Errorf("%s", res.String())
 	}
 	return rtn, nil
@@ -210,24 +230,37 @@ func (c *APIClient) parseResponse(res *resty.Response, path string, err error) (
 
 func (c *APIClient) parseSubscriptionResponse(res *resty.Response, path string, err error) (*SubscriptionResponse, error) {
 	if err != nil {
+		if c.protocol == "nahan-v1" {
+			return nil, fmt.Errorf("native API unavailable: %w", err)
+		}
 		return nil, fmt.Errorf("request %s failed: %s", c.assembleURL(path), err)
 	}
 
-	if res.StatusCode() > 400 {
+	if res.StatusCode() >= 400 {
+		if c.protocol == "nahan-v1" {
+			return nil, fmt.Errorf("native API status %d", res.StatusCode())
+		}
 		body := res.Body()
 		return nil, fmt.Errorf("request %s failed: %s, %v", c.assembleURL(path), string(body), err)
 	}
 
-	response := res.Result().(*SubscriptionResponse)
+	response, ok := res.Result().(*SubscriptionResponse)
+	if !ok || response == nil {
+		return nil, errors.New("invalid subscription response")
+	}
 
 	return response, nil
 }
 
 func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
+	return c.GetNodeInfoContext(context.Background())
+}
+func (c *APIClient) GetNodeInfoContext(ctx context.Context) (nodeInfo *api.NodeInfo, err error) {
 	c.configFetched.Store(false)
 	server := new(serverConfig)
 	path := c.path("server")
 	res, err := c.client.R().
+		SetContext(ctx).
 		ForceContentType("application/json").
 		SetHeader("If-None-Match", c.eTags["server"]).
 		Get(path)
@@ -268,9 +301,13 @@ func (c *APIClient) GetNodeInfo() (nodeInfo *api.NodeInfo, err error) {
 }
 
 func (c *APIClient) GetSubscriptionList() (SubscriptionList *[]api.SubscriptionInfo, err error) {
+	return c.GetSubscriptionListContext(context.Background())
+}
+func (c *APIClient) GetSubscriptionListContext(ctx context.Context) (SubscriptionList *[]api.SubscriptionInfo, err error) {
 	c.subscriptionsFetched.Store(false)
 	path := c.path("subscriptions")
 	res, err := c.client.R().
+		SetContext(ctx).
 		SetHeader("If-None-Match", c.eTags["subscriptions"]).
 		SetResult(&SubscriptionResponse{}).
 		ForceContentType("application/json").
@@ -369,6 +406,15 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 
 		speedLimit = uint64((subscription.Speedlimit * 1000000) / 8)
 		serviceID, deviceID, email := 0, 0, subscription.Email
+		if c.protocol == "nahan-v1" && subscription.ServiceID > 0 {
+			serviceID = subscription.ServiceID
+		}
+		if c.protocol == "nahan-v1" && subscription.GlobalIPLimit && !deviceMode {
+			if subscription.Id <= 0 || subscription.ServiceID <= 0 || subscription.Iplimit <= 0 || subscription.Iplimit > 4096 {
+				return nil, errors.New("invalid global IP identity")
+			}
+			serviceID = subscription.ServiceID
+		}
 		if deviceMode {
 			deviceLimit = subscription.DeviceLimit
 			serviceID, deviceID = subscription.ServiceID, subscription.DeviceID
@@ -392,14 +438,15 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 		}
 
 		subscriptionList = append(subscriptionList, api.SubscriptionInfo{
-			UID:         subscription.Id,
-			ServiceID:   serviceID,
-			DeviceID:    deviceID,
-			UUID:        subscription.Uuid,
-			Email:       email,
-			Passwd:      subscription.Passwd,
-			DeviceLimit: deviceLimit,
-			SpeedLimit:  speedLimit,
+			GlobalIPLimit: c.protocol == "nahan-v1" && !deviceMode && subscription.GlobalIPLimit,
+			UID:           subscription.Id,
+			ServiceID:     serviceID,
+			DeviceID:      deviceID,
+			UUID:          subscription.Uuid,
+			Email:         email,
+			Passwd:        subscription.Passwd,
+			DeviceLimit:   deviceLimit,
+			SpeedLimit:    speedLimit,
 		})
 	}
 	c.deviceCredentials = nextCredentials
@@ -410,12 +457,20 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 func (c *APIClient) GetNodeRule() (*[]api.DetectRule, error) {
 	ruleList := c.LocalRuleList
 
-	routes := c.resp.Load().(*serverConfig).Routes
+	config, ok := c.resp.Load().(*serverConfig)
+	if !ok || config == nil {
+		return nil, fmt.Errorf("node rules unavailable")
+	}
+	routes := config.Routes
 
 	for i := range routes {
+		pattern, err := regexp.Compile(routes[i].Regex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid node rule")
+		}
 		ruleListItem := api.DetectRule{
 			ID:      routes[i].Id,
-			Pattern: regexp.MustCompile(routes[i].Regex),
+			Pattern: pattern,
 		}
 		ruleList = append(ruleList, ruleListItem)
 	}
@@ -429,9 +484,13 @@ func (c *APIClient) ReportSubscriptionTraffic(subscriptionTraffic *[]api.Subscri
 
 func (c *APIClient) DurableTrafficEnabled() bool { return c.outbox != nil || c.outboxErr != nil }
 
-func (c *APIClient) QueueTraffic(traffic *[]api.SubscriptionTraffic) error {
+func (c *APIClient) QueueTraffic(traffic *[]api.SubscriptionTraffic) (err error) {
+	defer func() { c.queueFailed.Store(err != nil) }()
 	if c.outboxErr != nil {
 		return c.outboxErr
+	}
+	if c.outbox == nil {
+		return errors.New("traffic outbox unavailable")
 	}
 	return c.outbox.Enqueue(*traffic)
 }
@@ -446,6 +505,9 @@ func (c *APIClient) FlushTraffic() error {
 }
 
 func (c *APIClient) sendTraffic(subscriptionTraffic *[]api.SubscriptionTraffic, reportID string) error {
+	return c.sendTrafficContext(context.Background(), subscriptionTraffic, reportID)
+}
+func (c *APIClient) sendTrafficContext(ctx context.Context, subscriptionTraffic *[]api.SubscriptionTraffic, reportID string) error {
 	path := c.path("traffic")
 
 	data := make([]SubscriptionTraffic, len(*subscriptionTraffic))
@@ -457,7 +519,7 @@ func (c *APIClient) sendTraffic(subscriptionTraffic *[]api.SubscriptionTraffic, 
 		}
 	}
 	postData := &PostData{Data: data}
-	res, err := c.client.R().
+	res, err := c.client.R().SetContext(ctx).
 		SetHeader("Idempotency-Key", reportID).
 		SetBody(postData).
 		ForceContentType("application/json").

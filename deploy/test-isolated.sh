@@ -9,6 +9,6 @@ docker run --rm --name nahan-core-build-test \
   --cpus=1 --memory=2g --memory-swap=2g \
   -e GOMAXPROCS=2 -e GOCACHE=/cache \
   -v "$root/source:/src" -v "$root/go-cache:/cache" \
-  -v "$root/mod-cache:/go/pkg/mod" -w /src golang:1.26-alpine \
+  -v "$root/mod-cache:/go/pkg/mod" -w /src golang:1.27.3-alpine \
   sh -c 'go mod download && go run ./tools/xray-patch > /tmp/modfile &&
     go test -p 1 -modfile="$(cat /tmp/modfile)" ./utility/outbox ./api/nahan ./service/controller'

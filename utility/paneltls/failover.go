@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	_ "embed"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -34,6 +35,7 @@ type failover struct {
 	preferred    int
 	retryPrimary time.Time
 	routeTimeout time.Duration
+	observations [3]RouteObservation
 }
 
 // WithFailover is deliberately limited to the official panel and exact core APIs.
@@ -137,7 +139,9 @@ func (f *failover) RoundTrip(r *http.Request) (*http.Response, error) {
 		if index > 0 {
 			req.Host = ControlServerName
 		}
+		started := time.Now()
 		response, err := f.routes[index].RoundTrip(req)
+		f.observe(index, started, err, response)
 		gateway := response != nil && (response.StatusCode == 502 || response.StatusCode == 503 || response.StatusCode == 504)
 		if err != nil || gateway {
 			if response != nil && !gateway {
@@ -152,6 +156,9 @@ func (f *failover) RoundTrip(r *http.Request) (*http.Response, error) {
 			}
 			cancel()
 			last = errors.New("panel connection failed on verified route")
+			if err != nil {
+				last = fmt.Errorf("panel connection failed on verified route: %w", err)
+			}
 			continue
 		}
 		// Auth, conflicts, redirects and other application responses are terminal.
