@@ -129,6 +129,7 @@ class NativeInstallerTest(unittest.TestCase):
                     self.assertEqual((root / 'runtime/core.key').stat().st_mode & 0o777, 0o600)
                     self.assertEqual((root / 'runtime/config.json').stat().st_mode & 0o777, 0o600)
                     self.assertEqual((root / 'runtime').stat().st_mode & 0o777, 0o700)
+                    self.assertEqual(root.stat().st_mode & 0o777, 0o755)
                     self.assertIn('User=nahan', unit.read_text())
                     self.assertIn('CAP_NET_BIND_SERVICE', unit.read_text())
                     self.assertIn([str(root / 'NahaN'), 'update', 'register', '--service', 'nahan.service'], calls)

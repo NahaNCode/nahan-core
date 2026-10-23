@@ -182,6 +182,7 @@ def install(binary, config, key, tty):
     try:
         ROOT.mkdir(mode=0o755)
         created = True
+        ROOT.chmod(0o755)
         runtime = ROOT / 'runtime'
         runtime.mkdir(mode=0o700)
         os.chown(runtime, account.pw_uid, account.pw_gid)
