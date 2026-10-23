@@ -20,8 +20,10 @@ jobs:
       - name: Require pinned runtime acceptance before release
         env:
           CGO_ENABLED: 0
+          NAHAN_REQUIRE_REDIS_TESTS: 1
         run: |
           set -euo pipefail
+          command -v redis-server || (sudo apt-get update && sudo apt-get install -y redis-server)
           sh deploy/check-public-boundary.sh
           node deploy/check-public-secrets.mjs
           MODFILE=$(go run ./tools/xray-patch)
@@ -31,7 +33,7 @@ jobs:
           CGO_ENABLED: 1
         run: |
           MODFILE=$(go run ./tools/xray-patch)
-          go test -race -p 1 -modfile="$MODFILE" ./utility/controlplane ./utility/paneltls ./utility/outbox ./api/nahan ./service/controller ./cmd
+          go test -race -p 1 -modfile="$MODFILE" ./utility/limiter ./utility/controlplane ./utility/paneltls ./utility/outbox ./api/nahan ./service/controller ./cmd
   binaries:
     needs: checks
     if: github.ref == 'refs/heads/main'

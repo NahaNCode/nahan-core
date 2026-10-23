@@ -217,6 +217,55 @@ func TestLeaseHTTPTimeoutDoesNotRetry(t *testing.T) {
 	}
 }
 
+func TestDeviceLeaseFanoutIsBoundedAndSaturationDoesNotRevoke(t *testing.T) {
+	entered := make(chan struct{}, 8)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	defer releaseOnce.Do(func() { close(release) })
+	c := New(&api.Config{Protocol: "nahan-v1", APIHost: srv.URL})
+	var wg sync.WaitGroup
+	for id := 1; id <= 8; id++ {
+		wg.Add(1)
+		go func(id int) { defer wg.Done(); c.AdmitDevice(id) }(id)
+	}
+	for i := 0; i < 8; i++ {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("admission workers did not start")
+		}
+	}
+	c.devices.mu.Lock()
+	before := time.Now().Add(time.Minute)
+	c.devices.entries[90] = &deviceLease{active: time.Now(), expires: before}
+	c.devices.mu.Unlock()
+	if c.RenewDevices() == nil {
+		t.Fatal("saturated renewal was not reported")
+	}
+	if !c.ValidDevice(90) {
+		t.Fatal("saturation revoked an unexpired lease")
+	}
+	if c.AdmitDevice(91) {
+		t.Fatal("saturation invented a grant")
+	}
+	d := c.DeviceLeaseDiagnostics()
+	if d.Saturated != 2 || d.Unavailable != 2 || d.Denied != 0 {
+		t.Fatalf("failure incorrectly reported as authorization denial: %+v", d)
+	}
+	releaseOnce.Do(func() { close(release) })
+	wg.Wait()
+}
+
 func TestDeviceSubscriptionModeAndLegacyCompatibility(t *testing.T) {
 	rows := []Subscription{{Id: 3, ServiceID: 3, DeviceID: 3, DeviceLimit: 1, Email: "same", Uuid: "preserved", Passwd: "preserved", Iplimit: 0, Ipcount: 999},
 		{Id: 4, ServiceID: 3, DeviceID: 4, DeviceLimit: 1, Email: "same"}}

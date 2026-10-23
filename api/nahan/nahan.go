@@ -25,6 +25,7 @@ import (
 )
 
 type APIClient struct {
+	ips                   ipLeases
 	devices               deviceLeases
 	deviceCredentials     map[int]deviceCredential
 	deviceEmailSequence   uint64
@@ -405,6 +406,15 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 
 		speedLimit = uint64((subscription.Speedlimit * 1000000) / 8)
 		serviceID, deviceID, email := 0, 0, subscription.Email
+		if c.protocol == "nahan-v1" && subscription.ServiceID > 0 {
+			serviceID = subscription.ServiceID
+		}
+		if c.protocol == "nahan-v1" && subscription.GlobalIPLimit && !deviceMode {
+			if subscription.Id <= 0 || subscription.ServiceID <= 0 || subscription.Iplimit <= 0 || subscription.Iplimit > 4096 {
+				return nil, errors.New("invalid global IP identity")
+			}
+			serviceID = subscription.ServiceID
+		}
 		if deviceMode {
 			deviceLimit = subscription.DeviceLimit
 			serviceID, deviceID = subscription.ServiceID, subscription.DeviceID
@@ -428,14 +438,15 @@ func (c *APIClient) ParseSubscriptionList(subscriptionResponse *[]Subscription) 
 		}
 
 		subscriptionList = append(subscriptionList, api.SubscriptionInfo{
-			UID:         subscription.Id,
-			ServiceID:   serviceID,
-			DeviceID:    deviceID,
-			UUID:        subscription.Uuid,
-			Email:       email,
-			Passwd:      subscription.Passwd,
-			DeviceLimit: deviceLimit,
-			SpeedLimit:  speedLimit,
+			GlobalIPLimit: c.protocol == "nahan-v1" && !deviceMode && subscription.GlobalIPLimit,
+			UID:           subscription.Id,
+			ServiceID:     serviceID,
+			DeviceID:      deviceID,
+			UUID:          subscription.Uuid,
+			Email:         email,
+			Passwd:        subscription.Passwd,
+			DeviceLimit:   deviceLimit,
+			SpeedLimit:    speedLimit,
 		})
 	}
 	c.deviceCredentials = nextCredentials
