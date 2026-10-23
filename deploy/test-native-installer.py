@@ -3,9 +3,14 @@ import base64
 import hashlib
 import io
 import json
+import os
+import pty
+import select
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -21,6 +26,48 @@ def config():
         'CoreID': '11111111-1111-4111-8111-111111111111', 'KeyFile': './core.key'}, 'Nodes': []}
 
 class NativeInstallerTest(unittest.TestCase):
+    def test_actual_terminal_accepts_json_and_hides_the_key(self):
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                with open('/dev/tty', 'r', encoding='utf-8') as reader, open('/dev/tty', 'w', encoding='utf-8', buffering=1) as writer:
+                    terminal = m.Terminal(reader, writer)
+                    value = m.read_config(terminal)
+                    secret = m.getpass.getpass('PRIVATE_KEY_PROMPT: ', stream=terminal)
+                    if value['ControlPlane']['CoreID'] == config()['ControlPlane']['CoreID'] and secret == 'fixture-pty-private-value':
+                        print('ROUNDTRIP_OK', file=terminal, flush=True)
+                    else:
+                        os._exit(2)
+                os._exit(0)
+            except Exception:
+                os._exit(3)
+        transcript = b''
+        def until(marker):
+            nonlocal transcript
+            deadline = time.monotonic() + 5
+            while marker not in transcript and time.monotonic() < deadline:
+                if select.select([fd], [], [], .1)[0]:
+                    try:
+                        transcript += os.read(fd, 8192)
+                    except OSError:
+                        break
+            self.assertIn(marker, transcript)
+        try:
+            until(b'CONFIGURATION')
+            os.write(fd, json.dumps(config()).encode() + b'\n')
+            until(b'PRIVATE_KEY_PROMPT: ')
+            os.write(fd, b'fixture-pty-private-value\n')
+            until(b'ROUNDTRIP_OK')
+            self.assertNotIn(b'fixture-pty-private-value', transcript)
+            _, status = os.waitpid(pid, 0)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+            pid = None
+        finally:
+            os.close(fd)
+            if pid:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+
     def test_shell_and_help(self):
         subprocess.run(['bash', '-n', str(SOURCE)], check=True)
         result = subprocess.run(['bash', str(SOURCE), '--help'], capture_output=True, check=True)

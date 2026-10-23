@@ -157,6 +157,17 @@ def read_config(tty):
             continue
     raise InstallError('Configuration is too large. Paste only config.json from the panel.')
 
+class Terminal:
+    # Separate streams avoid BufferedRandom's seek requirement on real TTY devices.
+    def __init__(self, reader, writer):
+        self.reader, self.writer = reader, writer
+    def readline(self):
+        return self.reader.readline()
+    def write(self, value):
+        return self.writer.write(value)
+    def flush(self):
+        return self.writer.flush()
+
 def fresh_install():
     require(not ROOT.exists() and not ROOT.is_symlink() and not UNIT.exists() and not UNIT.is_symlink(),
             'An installation already exists at /opt/nahan or nahan.service. Nothing overwritten. For an existing core use: sudo nahan-core update')
@@ -244,7 +255,8 @@ def main():
     arch = {'x86_64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(platform.machine())
     require(arch is not None, 'Supported architectures: Linux x86_64 and arm64.')
     fresh_install()
-    with open('/dev/tty', 'r+', encoding='utf-8', buffering=1) as tty:
+    with open('/dev/tty', 'r', encoding='utf-8') as reader, open('/dev/tty', 'w', encoding='utf-8', buffering=1) as writer:
+        tty = Terminal(reader, writer)
         print('NahaN fresh installation | Linux ' + arch + '\nNo uploads required. Settings and the secret are read only from this terminal.', file=tty)
         config = read_config(tty)
         print('\n2/4 KEY: click Copy core.key in the panel, paste below, then press Enter. The key is hidden and never logged.', file=tty, flush=True)
