@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 if [ "${1:-}" = --help ]; then
-  printf '%s\n' 'NahaN fresh native installer (Linux + systemd, amd64/arm64).' 'Run from a terminal as root. Paste panel config.json, then core.key when prompted.' 'Full-screen terminal wizard; --plain disables screen switching; NO_COLOR=1 disables colors.' 'Existing installations are never overwritten. No customer ports or tunnels are opened.'
+  printf '%s\n' 'NahaN fresh native installer (Linux + systemd, amd64/arm64).' 'Run from a terminal as root. Paste panel config.json, then core.key when prompted.' 'Full-screen terminal wizard; --plain disables screen switching; NO_COLOR=1 disables colors.' '--repair-updater registers an existing native installation without reinstalling or restarting its core.' 'Existing installations are never overwritten. No customer ports or tunnels are opened.'
   exit 0
 fi
 if [ "$(id -u)" -ne 0 ]; then printf '%s\n' 'Run this installer with sudo bash install.sh.' >&2; exit 1; fi
@@ -48,6 +48,7 @@ ROOT = Path('/opt/nahan')
 UNIT = Path('/etc/systemd/system/nahan.service')
 REDIRECT_HOSTS = {'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'}
 STAGE = 'preflight'
+REPAIR_COMMAND = '''(set -eu; work="$(mktemp -d)"; trap 'rm -rf -- "$work"' EXIT; install -m 700 /opt/nahan/NahaN "$work/NahaN"; "$work/NahaN" update register --service nahan.service)'''
 
 def stage(value):
     global STAGE
@@ -249,6 +250,15 @@ def write_private(path, value, uid, gid):
     path.chmod(0o600)
     os.chown(path, uid, gid)
 
+def register_updater(binary):
+    # Older signed cores count their own registrar as a second live core process.
+    # A private copy preserves the uniqueness guard without replacing or restarting the core.
+    with tempfile.TemporaryDirectory(prefix='nahan-register-') as temporary:
+        helper = Path(temporary) / 'NahaN'
+        shutil.copyfile(binary, helper)
+        helper.chmod(0o700)
+        return run([str(helper), 'update', 'register', '--service', 'nahan.service'], check=False)
+
 def install(binary, config, key, tty):
     fresh_install()
     account = None
@@ -310,11 +320,16 @@ WantedBy=multi-user.target
             shutil.rmtree(ROOT)
             run(['systemctl', 'daemon-reload'], check=False)
         raise
-    result = run([str(ROOT / 'NahaN'), 'update', 'register', '--service', 'nahan.service'], check=False)
+    registered = False
+    stage('updater-registration')
+    try:
+        registered = register_updater(ROOT / 'NahaN').returncode == 0
+    except (OSError, subprocess.SubprocessError) as error:
+        print('Updater registration: ' + explain_error(error), file=tty)
     print('\n4/4 INSTALLED: nahan.service is active and starts after reboot.', file=tty)
-    print('Updater registered.' if result.returncode == 0 else 'Core is running, but updater registration needs review: sudo /opt/nahan/NahaN update register --service nahan.service', file=tty)
+    print('Updater registered.' if registered else 'Core is running; updater needs repair. As root, run:\n' + REPAIR_COMMAND, file=tty)
     print('Return to the panel and click Check core report. Expect a fresh heartbeat and matching desired/applied revisions.\nNo customer listener or tunnel has been created. The core remains LAB until panel validation.\nDiagnostics: sudo systemctl status nahan.service\nLogs: sudo journalctl -u nahan.service -n 40 --no-pager\nNever share core.key or unredacted logs.', file=tty, flush=True)
-    return result.returncode == 0
+    return registered
 
 def main():
     require(os.geteuid() == 0, 'Run as root.')
@@ -325,6 +340,16 @@ def main():
         raise InstallError('Another NahaN installer is already running.') from None
     arch = {'x86_64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(platform.machine())
     require(arch is not None, 'Supported architectures: Linux x86_64 and arm64.')
+    if '--repair-updater' in sys.argv:
+        stage('updater-repair')
+        binary = ROOT / 'NahaN'
+        require(binary.is_file() and not binary.is_symlink() and binary.stat().st_uid == 0
+                and binary.stat().st_mode & 0o022 == 0, 'An existing root-owned protected native binary is required. No installation changed.')
+        print('NahaN updater repair: existing core, config and key are preserved. Core is not restarted.')
+        result = register_updater(binary)
+        require(result.returncode == 0, 'Updater repair was rejected (exit ' + str(result.returncode) + '). Check the existing core service and updater profile locally; no core reinstall or restart was requested.')
+        print('Updater registered. Existing core was not restarted.')
+        return
     fresh_install()
     with open('/dev/tty', 'r', encoding='utf-8') as reader, open('/dev/tty', 'w', encoding='utf-8', buffering=1) as writer:
         tty = Terminal(reader, writer)
@@ -332,7 +357,7 @@ def main():
             registered = interactive_install(tty, screen, arch)
     print('NahaN INSTALLED | nahan.service active | /opt/nahan\nReturn to the panel and check the fresh core report. LAB is not production readiness.\nDiagnostics: systemctl status nahan.service\nPrivate local logs: journalctl -u nahan.service -n 40 --no-pager')
     if not registered:
-        print('WARNING: core is running but updater registration failed. Retry: sudo /opt/nahan/NahaN update register --service nahan.service')
+        print('WARNING: core is running but updater registration failed. Repair as root without reinstalling:\n' + REPAIR_COMMAND)
 
 def interactive_install(tty, screen, arch):
         screen.page(1, 'Connect this server to your panel', [
@@ -399,7 +424,7 @@ def interactive_install(tty, screen, arch):
             registered = install(binary, config, key, tty)
             screen.page(5, 'INSTALLED / return to the panel', [
                 'nahan.service is active and configured to start after reboot.',
-                'Updater registered.' if registered else 'WARNING: updater registration failed. Core remains running. Retry: sudo /opt/nahan/NahaN update register --service nahan.service',
+                'Updater registered.' if registered else 'WARNING: updater registration failed. Core remains running. Use --repair-updater with the current installer; do not reinstall or restart the core.',
                 'Click Check core report in the panel. Require a fresh heartbeat and matching revisions.',
                 'This core remains LAB. Test a real listener before using customer traffic.',
                 'systemctl status nahan.service',

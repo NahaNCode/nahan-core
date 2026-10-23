@@ -13,7 +13,7 @@ import tempfile
 import time
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 SOURCE = Path(__file__).resolve().parents[1] / 'install.sh'
 CODE = SOURCE.read_text().split("<<'NAHAN_INSTALL_PY'\n", 1)[1].rsplit('\nNAHAN_INSTALL_PY', 1)[0]
@@ -26,6 +26,54 @@ def config():
         'CoreID': '11111111-1111-4111-8111-111111111111', 'KeyFile': './core.key'}, 'Nodes': []}
 
 class NativeInstallerTest(unittest.TestCase):
+    def test_repair_mode_never_calls_fresh_install_or_restarts_core(self):
+        for owner, mode, exit_code in [(0, 0o100755, 0), (1000, 0o100755, 0), (0, 0o100777, 0), (0, 0o100755, 1)]:
+            with self.subTest(owner=owner, mode=mode, exit_code=exit_code), tempfile.TemporaryFile() as lock:
+                root, binary = MagicMock(), MagicMock()
+                root.__truediv__.return_value = binary
+                binary.is_file.return_value = True
+                binary.is_symlink.return_value = False
+                binary.stat.return_value = types.SimpleNamespace(st_uid=owner, st_mode=mode)
+                with patch.object(m, 'ROOT', root), patch.object(m.os, 'geteuid', return_value=0), \
+                     patch.object(m.os, 'open', return_value=lock.fileno()), \
+                     patch.object(m.sys, 'argv', ['installer', '--repair-updater']), \
+                     patch.object(m.sys, 'stdout', io.StringIO()), \
+                     patch.object(m, 'register_updater', return_value=types.SimpleNamespace(returncode=exit_code)) as register, \
+                     patch.object(m, 'fresh_install') as fresh, patch.object(m, 'install') as install:
+                    if owner == 0 and mode == 0o100755 and exit_code == 0:
+                        m.main()
+                        register.assert_called_once_with(binary)
+                    else:
+                        with self.assertRaises(m.InstallError):
+                            m.main()
+                    if owner != 0 or mode == 0o100777:
+                        register.assert_not_called()
+                    fresh.assert_not_called()
+                    install.assert_not_called()
+
+    def test_updater_registration_uses_a_private_copy_and_cleans_it_up(self):
+        subprocess.run(['bash', '-n'], input=m.REPAIR_COMMAND.encode(), check=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'running-core'
+            binary.write_bytes(b'fixture-original-binary')
+            helpers = []
+            def run(args, check=True):
+                helper = Path(args[0])
+                helpers.append(helper)
+                self.assertNotEqual(helper, binary)
+                self.assertEqual(helper.read_bytes(), binary.read_bytes())
+                self.assertEqual(helper.stat().st_mode & 0o777, 0o700)
+                self.assertEqual(helper.parent.stat().st_mode & 0o777, 0o700)
+                self.assertEqual(args[1:], ['update', 'register', '--service', 'nahan.service'])
+                return types.SimpleNamespace(returncode=0)
+            with patch.object(m, 'run', run):
+                self.assertEqual(m.register_updater(binary).returncode, 0)
+            self.assertTrue(all(not helper.exists() for helper in helpers))
+            self.assertEqual(binary.read_bytes(), b'fixture-original-binary')
+
+    def test_updater_failure_preserves_successful_core_installation(self):
+        self.simulate_install(False, updater_failure=True)
+
     def test_actionable_errors_never_expose_arbitrary_exception_details(self):
         secret = 'fixture-private-value-do-not-print'
         cases = [
@@ -250,7 +298,7 @@ class NativeInstallerTest(unittest.TestCase):
     def test_failed_service_removes_only_the_new_installation(self):
         self.simulate_install(True)
 
-    def simulate_install(self, fail):
+    def simulate_install(self, fail, updater_failure=False):
         with tempfile.TemporaryDirectory() as temp:
             root, unit = Path(temp) / 'nahan', Path(temp) / 'nahan.service'
             binary = Path(temp) / 'verified-binary'
@@ -258,6 +306,8 @@ class NativeInstallerTest(unittest.TestCase):
             calls = []
             def run(args, check=True):
                 calls.append(args)
+                if updater_failure and args[1:3] == ['update', 'register']:
+                    raise subprocess.TimeoutExpired('fixture-registrar', 120)
                 return types.SimpleNamespace(returncode=1 if fail and 'is-active' in args else 0,
                                              stdout=b'not-found\n' if 'show' in args else b'')
             account = types.SimpleNamespace(pw_uid=1000, pw_gid=1000, pw_shell='/usr/sbin/nologin')
@@ -270,14 +320,21 @@ class NativeInstallerTest(unittest.TestCase):
                     self.assertFalse(unit.exists())
                 else:
                     terminal = io.StringIO()
-                    m.install(binary, config(), 'fake-key', terminal)
+                    registered = m.install(binary, config(), 'fake-key', terminal)
+                    self.assertEqual(registered, not updater_failure)
+                    if updater_failure:
+                        self.assertIn('Core is running; updater needs repair', terminal.getvalue())
                     self.assertEqual((root / 'runtime/core.key').stat().st_mode & 0o777, 0o600)
                     self.assertEqual((root / 'runtime/config.json').stat().st_mode & 0o777, 0o600)
                     self.assertEqual((root / 'runtime').stat().st_mode & 0o777, 0o700)
                     self.assertEqual(root.stat().st_mode & 0o777, 0o755)
                     self.assertIn('User=nahan', unit.read_text())
                     self.assertIn('CAP_NET_BIND_SERVICE', unit.read_text())
-                    self.assertIn([str(root / 'NahaN'), 'update', 'register', '--service', 'nahan.service'], calls)
+                    registration = [call for call in calls if call[1:3] == ['update', 'register']]
+                    self.assertEqual(len(registration), 1)
+                    self.assertNotEqual(registration[0][0], str(root / 'NahaN'))
+                    self.assertEqual(registration[0][1:], ['update', 'register', '--service', 'nahan.service'])
+                    self.assertFalse(Path(registration[0][0]).exists(), 'private registrar must be cleaned up')
                     self.assertNotIn('fake-key', terminal.getvalue())
                     self.assertTrue(all('fake-key' not in str(call) for call in calls))
 

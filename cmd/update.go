@@ -246,7 +246,12 @@ func exclusiveBinary(binary string) error {
 		return err
 	}
 	count := 0
+	self := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "exe")
 	for _, entry := range entries {
+		// Registration may be invoked through the core binary itself, not just the helper.
+		if entry == self {
+			continue
+		}
 		path, err := os.Readlink(entry)
 		if err == nil && path == binary {
 			count++
