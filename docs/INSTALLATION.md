@@ -2,6 +2,13 @@
 
 ## Quick interactive installation (new server)
 
+> **Previously copied installer command?** Commands pinned to `92e92c2` contain
+> a real-terminal opening bug. An immediate generic failure before CONFIGURATION
+> is consistent with that bug, not proof of a network failure. Copy the current
+> command below or refresh the panel guide. Do not retry a saved old command.
+> That pre-input failure did not create an installation; do not delete service
+> files, rotate the connection key or disable safety checks to recover.
+
 This path installs a **fresh native Linux/systemd core**, not Docker and not the
 host agent. Linux x86_64 and ARM64 are supported. Debian/Ubuntu dependencies are
 installed when needed; on another distribution install curl, CA certificates,
@@ -14,8 +21,18 @@ to GitHub and the panel; no inbound customer ports are opened by this installer.
    The same pinned, checksum-verified command is:
 
 ```sh
-(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/8ed4838e345f8e0e6c90805d8b80fb9bd51d385f/install.sh -o "$work/install.sh" && printf 'e761b5c1a17fa28a0c06b01a43b8fb7aadbd4ca1eb5677175d78a5d7051130ae  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
+(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/f781b9edae0f299f29e621d89984cc4fba22a5ed/install.sh -o "$work/install.sh" && printf '7611950079c7728db234c35b436c2dc65f345d5388846ab59368a12f9128e5d6  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
 ```
+
+The wizard opens a full-screen NahaN terminal interface with a five-stage rail,
+verified-release review, download percentage and completion screen. Use an SSH
+terminal of at least 80 columns by 30 rows for the most comfortable view. Smaller
+terminals wrap text. The key stays hidden. Enter closes the completion screen and
+restores your shell; errors also restore the terminal and remain visible in your
+shell with a stage name and a safe explanation. No terminal recording is created.
+For a terminal that cannot switch screens, run the downloaded script with
+`bash install.sh --plain`; `NO_COLOR=1` disables colors without disabling the wizard.
+The initial curl/package bootstrap runs before the full-screen interface starts.
 
 3. At `CONFIGURATION`, click **Copy settings** in the panel, paste into the
    terminal and press Enter. Both compact and multi-line `config.json` work.
@@ -57,6 +74,10 @@ do not rotate a live core's key just to retrieve an installation package.
 
 | Result | Action |
 | --- | --- |
+| Immediate generic error from old `92e92c2` command | Use the current pinned command above. The old TTY bug occurred before credentials or service creation. |
+| `HTTP 403` / `HTTP 404` | HTTPS reached GitHub but the release request was rejected or unavailable. Check release access; do not treat ping as an HTTPS test. |
+| DNS lookup / timeout | Check DNS and outbound TCP 443 for `github.com`, `raw.githubusercontent.com` and `release-assets.githubusercontent.com`. |
+| `errno 28` / `errno 13` | Check `df -h /opt /tmp` / root permissions. Read the reported stage before retrying. |
 | Missing terminal | Download the script, then execute it from SSH; do not pipe it into bash. |
 | Unsupported architecture/systemd | Use Linux x86_64/ARM64 with systemd, or the separately documented container workflow. |
 | Catalog expired / TLS failure | Check `timedatectl`, CA certificates and outbound HTTPS. Never disable signature or TLS checks. |
@@ -65,9 +86,17 @@ do not rotate a live core's key just to retrieve an installation package.
 | Service running, no panel report | Check the two commands below, panel reachability, the issued key and TLS `ServerName`. Keep issued identity fields unchanged. |
 
 ```sh
+timedatectl
+curl --proto '=https' --tlsv1.2 -I --connect-timeout 10 --max-time 30 https://raw.githubusercontent.com/NahaNCode/nahan-core/main/README.md
+curl --proto '=https' --tlsv1.2 -IL --connect-timeout 10 --max-time 30 https://github.com/NahaNCode/nahan-core/releases/latest/download/updates.json
 sudo systemctl status nahan.service
 sudo journalctl -u nahan.service -n 40 --no-pager
 ```
+
+Successful `ping github.com` only tests ICMP, not TLS, HTTP redirects or release
+asset downloads. If help is still needed, share only the installer stage, safe
+error type/status and installer commit. Do not use `bash -x`, `set -x`, terminal
+session recording or unredacted logs: these can expose the connection key.
 
 Never share `core.key` or unredacted service logs. After connection, publish and
 test a listener separately before sending customer traffic. Host-agent enrollment
