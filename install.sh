@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 if [ "${1:-}" = --help ]; then
-  printf '%s\n' 'NahaN fresh native installer (Linux + systemd, amd64/arm64).' 'Run from a terminal as root. Paste panel config.json, then core.key when prompted.' 'Existing installations are never overwritten. No customer ports or tunnels are opened.'
+  printf '%s\n' 'NahaN fresh native installer (Linux + systemd, amd64/arm64).' 'Run from a terminal as root. Paste panel config.json, then core.key when prompted.' 'Full-screen terminal wizard; --plain disables screen switching; NO_COLOR=1 disables colors.' 'Existing installations are never overwritten. No customer ports or tunnels are opened.'
   exit 0
 fi
 if [ "$(id -u)" -ne 0 ]; then printf '%s\n' 'Run this installer with sudo bash install.sh.' >&2; exit 1; fi
@@ -31,19 +31,44 @@ import pwd
 import re
 import shutil
 import ssl
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 import uuid
+import textwrap
 
 PUBLIC_KEY = 'xiql0i80KrTc6ehKNhMQJuhnANSK7Q368RcCAoFO5Bc='
 CATALOG = 'https://github.com/NahaNCode/nahan-core/releases/latest/download/updates.json'
 ROOT = Path('/opt/nahan')
 UNIT = Path('/etc/systemd/system/nahan.service')
 REDIRECT_HOSTS = {'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'}
+STAGE = 'preflight'
+
+def stage(value):
+    global STAGE
+    STAGE = value
+
+def explain_error(error):
+    # Never echo arbitrary exception strings: they may contain pasted credentials.
+    if isinstance(error, InstallError):
+        return str(error)
+    if isinstance(error, urllib.error.HTTPError):
+        return 'GitHub HTTPS returned HTTP ' + str(error.code) + '. Check release access; ping alone does not test HTTPS.'
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return 'HTTPS certificate verification failed. Check timedatectl and ca-certificates; do not disable TLS verification.'
+    if isinstance(reason, socket.gaierror):
+        return 'DNS lookup failed. Check DNS for github.com and release-assets.githubusercontent.com.'
+    if isinstance(reason, (TimeoutError, socket.timeout, subprocess.TimeoutExpired)):
+        return 'Operation timed out. Check outbound HTTPS and systemd; retry only after checking the failed stage.'
+    if isinstance(reason, OSError):
+        return 'System operation failed (errno ' + str(reason.errno) + '). Check disk space, permissions and outbound HTTPS.'
+    return 'Unexpected ' + type(error).__name__ + '. No private inputs were logged. Report the stage and error type, not keys or raw logs.'
 
 class InstallError(Exception):
     pass
@@ -56,7 +81,8 @@ def run(args, check=True):
     result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, timeout=120)
     if check and result.returncode:
-        raise InstallError('Command failed: ' + Path(args[0]).name + '. No credentials were logged.')
+        action = ' ' + args[1] if Path(args[0]).name == 'systemctl' and len(args) > 1 else ''
+        raise InstallError('Command failed: ' + Path(args[0]).name + action + ' (exit ' + str(result.returncode) + '). Check systemctl status nahan.service locally. No command output or credentials were logged.')
     return result
 
 def secure_url(value, asset=False):
@@ -75,7 +101,7 @@ class Redirects(urllib.request.HTTPRedirectHandler):
         secure_url(newurl)
         return super().redirect_request(request, fp, code, msg, headers, newurl)
 
-def fetch(value, maximum, output=None):
+def fetch(value, maximum, output=None, progress=None):
     secure_url(value)
     opener = urllib.request.build_opener(Redirects(), urllib.request.HTTPSHandler(context=ssl.create_default_context()))
     request = urllib.request.Request(value, headers={'User-Agent': 'NahaN-Native-Installer/1'})
@@ -94,6 +120,8 @@ def fetch(value, maximum, output=None):
                 size += len(chunk)
                 require(size <= maximum, 'Release asset exceeded its signed size.')
                 target.write(chunk)
+                if progress:
+                    progress(size, maximum)
         return size
 
 def verify_catalog(data, work, now=None):
@@ -167,6 +195,48 @@ class Terminal:
         return self.writer.write(value)
     def flush(self):
         return self.writer.flush()
+
+class InstallerScreen:
+    STEPS = ('CONFIGURATION', 'KEY', 'VERIFY', 'INSTALL', 'COMPLETE')
+    def __init__(self, terminal, plain=False):
+        self.terminal = terminal
+        self.styled = not plain and os.environ.get('TERM', 'dumb') != 'dumb'
+        self.color = self.styled and 'NO_COLOR' not in os.environ
+    def __enter__(self):
+        if self.styled:
+            self.terminal.write('\033[?1049h')
+            self.terminal.flush()
+        return self
+    def __exit__(self, *_):
+        if self.styled:
+            self.terminal.write('\033[0m\033[?25h\033[?1049l')
+            self.terminal.flush()
+    def page(self, step, title, lines=()):
+        stage(self.STEPS[step - 1].lower())
+        width = max(24, min(shutil.get_terminal_size((88, 30)).columns - 2, 100))
+        teal = '\033[1;36m' if self.color else ''
+        amber = '\033[1;33m' if self.color else ''
+        reset = '\033[0m' if self.color else ''
+        out = self.terminal
+        if self.styled:
+            out.write('\033[2J\033[H')
+        print(teal + '+' + '-' * (width - 2) + '+' + reset, file=out)
+        print(teal + '  N A H A N' + reset, file=out)
+        for line in textwrap.wrap('CORE / SECURE SERVER ENROLLMENT', width=width - 4):
+            print('  ' + line, file=out)
+        print(teal + '+' + '-' * (width - 2) + '+' + reset, file=out)
+        print('', file=out)
+        for index, name in enumerate(self.STEPS, 1):
+            mark = '[done]' if index < step else '[ >> ]' if index == step else '[    ]'
+            print((amber if index == step else '') + '  ' + mark + ' ' + name + reset, file=out)
+        print('', file=out)
+        for line in textwrap.wrap(title, width=width - 4):
+            print('  ' + amber + line + reset, file=out)
+        print('  ' + '-' * (width - 4), file=out)
+        for line in lines:
+            for wrapped in textwrap.wrap(line, width=width - 4) or ['']:
+                print('  ' + wrapped, file=out)
+        print('', file=out, flush=True)
 
 def fresh_install():
     require(not ROOT.exists() and not ROOT.is_symlink() and not UNIT.exists() and not UNIT.is_symlink(),
@@ -257,12 +327,29 @@ def main():
     fresh_install()
     with open('/dev/tty', 'r', encoding='utf-8') as reader, open('/dev/tty', 'w', encoding='utf-8', buffering=1) as writer:
         tty = Terminal(reader, writer)
-        print('NahaN fresh installation | Linux ' + arch + '\nNo uploads required. Settings and the secret are read only from this terminal.', file=tty)
+        with InstallerScreen(tty, plain='--plain' in sys.argv) as screen:
+            interactive_install(tty, screen, arch)
+    print('NahaN INSTALLED | nahan.service active | /opt/nahan\nReturn to the panel and check the fresh core report. LAB is not production readiness.\nDiagnostics: systemctl status nahan.service\nPrivate local logs: journalctl -u nahan.service -n 40 --no-pager')
+
+def interactive_install(tty, screen, arch):
+        screen.page(1, 'Connect this server to your panel', [
+            'Linux ' + arch + ' / systemd / signed official release',
+            'Keep the panel installation package open. No uploads are required.',
+            'Paste only config.json at CONFIGURATION. /cancel or Ctrl+C stops safely.',
+            'Your connection key will be requested separately and hidden while typing.'])
         config = read_config(tty)
+        screen.page(2, 'Private connection key', [
+            'Configuration accepted. Core: ' + config['ControlPlane']['CoreID'],
+            'Copy core.key from the same panel package. Paste once, then press Enter.',
+            'No characters appear during secret entry. This is intentional.',
+            'Never paste the key into a shell command, chat or log.'])
         print('\n2/4 KEY: click Copy core.key in the panel, paste below, then press Enter. The key is hidden and never logged.', file=tty, flush=True)
         key = getpass.getpass('core.key: ', stream=tty).strip()
         require(bool(re.fullmatch(r'[A-Za-z0-9_+/=.-]{20,4096}', key)), 'Invalid key. Paste only core.key from the panel, not a command or config.json.')
-        print('\n3/4 VERIFY: downloading the signed official release catalog...', file=tty, flush=True)
+        screen.page(3, 'Verify the official release', [
+            'Downloading signed metadata over HTTPS from GitHub.',
+            'Checking Ed25519 signature, expiry and architecture before installation.',
+            'No local installation files have been created. This can take up to 60 seconds.'])
         with tempfile.TemporaryDirectory(prefix='nahan-install-') as temporary:
             work = Path(temporary)
             release = verify_catalog(fetch(CATALOG, 65536), work)
@@ -272,14 +359,49 @@ def main():
             require(re.fullmatch(r'[a-f0-9]{64}', asset.get('sha256', '')) and type(asset.get('size')) is int
                     and 0 < asset['size'] <= 256 * 1024 * 1024, 'Invalid signed asset metadata.')
             require('/' + release['version'] + '/' in asset['url'], 'Release version and binary do not match.')
+            screen.page(3, 'Review and approve installation', [
+                'SIGNATURE VERIFIED / ' + release['version'] + ' / Linux ' + arch,
+                'Service account: nahan (non-login, not root)',
+                'Private runtime: /opt/nahan/runtime / permissions 0600',
+                'Startup: systemd / automatic signed updater registration',
+                'Firewall, tunnels and customer listeners will not be changed.'])
             print('Verified release: ' + release['version'] + '\nCore: ' + config['ControlPlane']['CoreID']
                   + '\nDestination: /opt/nahan\nService: nahan.service\nNo firewall or tunnel rules will be changed.\nType INSTALL to continue, or anything else to cancel:', file=tty, flush=True)
             require(tty.readline().strip() == 'INSTALL', 'Canceled. Nothing installed.')
             binary = work / 'NahaN'
-            size = fetch(asset['url'], asset['size'], binary)
+            screen.page(4, 'Download and install verified core', ['Downloading release binary. No unverified binary will run.'])
+            last_progress = [0.0]
+            def progress(current, total):
+                if time.monotonic() - last_progress[0] < 1 and current != total:
+                    return
+                last_progress[0] = time.monotonic()
+                percent = min(100, current * 100 // total)
+                bar = '#' * (percent // 5) + '.' * (20 - percent // 5)
+                screen.page(4, 'Download verified core', [
+                    '[' + bar + '] ' + str(percent) + '%',
+                    str(current // 1024) + ' / ' + str(total // 1024) + ' KiB',
+                    'Signed release: ' + release['version'],
+                    'Next: SHA256 verification, private files and systemd startup.'])
+                stage('binary-download')
+            stage('binary-download')
+            size = fetch(asset['url'], asset['size'], binary, progress=progress)
+            stage('binary-verification')
             require(size == asset['size'] and hashlib.sha256(binary.read_bytes()).hexdigest() == asset['sha256'], 'Binary checksum mismatch. Nothing installed.')
             binary.chmod(0o700)
+            screen.page(4, 'Start the permanent system service', [
+                'Binary size and SHA256 verified.',
+                'Creating private runtime and starting nahan.service.',
+                'On startup failure, only this fresh installation is rolled back.'])
+            stage('service-installation')
             install(binary, config, key, tty)
+            screen.page(5, 'INSTALLED / return to the panel', [
+                'nahan.service is active and configured to start after reboot.',
+                'Click Check core report in the panel. Require a fresh heartbeat and matching revisions.',
+                'This core remains LAB. Test a real listener before using customer traffic.',
+                'systemctl status nahan.service',
+                'journalctl -u nahan.service -n 40 --no-pager (private local logs)',
+                'Press Enter to return to your shell.'])
+            tty.readline()
 
 if __name__ == '__main__':
     try:
@@ -287,10 +409,7 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, EOFError):
         print('\nInstallation canceled.', file=sys.stderr)
         sys.exit(1)
-    except InstallError as error:
-        print('NahaN installation stopped: ' + str(error), file=sys.stderr)
-        sys.exit(1)
-    except Exception:
-        print('NahaN installation stopped: network, dependency or local service operation failed. Check HTTPS access to GitHub, system time and required packages, then retry. No credentials were logged.', file=sys.stderr)
+    except Exception as error:
+        print('NahaN installation stopped [' + STAGE + ']: ' + explain_error(error), file=sys.stderr)
         sys.exit(1)
 NAHAN_INSTALL_PY

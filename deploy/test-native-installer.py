@@ -26,6 +26,103 @@ def config():
         'CoreID': '11111111-1111-4111-8111-111111111111', 'KeyFile': './core.key'}, 'Nodes': []}
 
 class NativeInstallerTest(unittest.TestCase):
+    def test_actionable_errors_never_expose_arbitrary_exception_details(self):
+        secret = 'fixture-private-value-do-not-print'
+        cases = [
+            (m.urllib.error.HTTPError('https://github.com/' + secret, 403, secret, None, None), 'HTTP 403'),
+            (m.urllib.error.URLError(m.socket.gaierror(-2, secret)), 'DNS'),
+            (m.urllib.error.URLError(m.ssl.SSLCertVerificationError(1, secret)), 'certificate'),
+            (TimeoutError(secret), 'timed out'),
+            (OSError(28, secret), 'errno 28'),
+            (ValueError(secret), 'ValueError'),
+        ]
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                message = m.explain_error(error)
+                self.assertIn(expected, message)
+                self.assertNotIn(secret, message)
+                if isinstance(error, m.urllib.error.HTTPError):
+                    error.close()
+
+    def test_fullscreen_restores_terminal_after_failure_and_plain_mode_has_no_escapes(self):
+        for plain in [False, True]:
+            output = io.StringIO()
+            terminal = m.Terminal(io.StringIO(), output)
+            with patch.dict(os.environ, {'TERM': 'xterm-256color'}), \
+                 patch.object(m.shutil, 'get_terminal_size', return_value=os.terminal_size((40, 24))):
+                with self.assertRaises(RuntimeError):
+                    with m.InstallerScreen(terminal, plain=plain) as screen:
+                        screen.page(3, 'Verify', ['A long explanation that wraps on a narrow SSH terminal safely.'])
+                        raise RuntimeError('fixture')
+            value = output.getvalue()
+            self.assertIn('N A H A N', value)
+            self.assertIn('[ >> ] VERIFY', value)
+            if plain:
+                self.assertNotIn('\033', value)
+            else:
+                self.assertIn('\033[?1049h', value)
+                self.assertTrue(value.endswith('\033[0m\033[?25h\033[?1049l'))
+
+    def test_full_interactive_flow_in_real_pty_without_installing_anything(self):
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                os.environ['TERM'] = 'xterm-256color'
+                data = b'verified-fixture-binary'
+                release = {'version': 'v1.2.3', 'assets': {'linux-amd64': {
+                    'url': 'https://github.com/NahaNCode/nahan-core/releases/download/v1.2.3/NahaN-linux-amd64',
+                    'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}}}
+                def fetch(url, maximum, output=None, progress=None):
+                    if output is None:
+                        return b'fixture-signed-envelope'
+                    output.write_bytes(data)
+                    if progress:
+                        progress(len(data), maximum)
+                    return len(data)
+                with open('/dev/tty', 'r') as reader, open('/dev/tty', 'w', buffering=1) as writer, \
+                     patch.object(m, 'fetch', fetch), patch.object(m, 'verify_catalog', return_value=release), \
+                     patch.object(m, 'install') as install:
+                    terminal = m.Terminal(reader, writer)
+                    with m.InstallerScreen(terminal) as screen:
+                        m.interactive_install(terminal, screen, 'amd64')
+                    if install.call_args.args[2] != 'fixture-interactive-private-key':
+                        os._exit(4)
+                    print('FULL_FLOW_OK', file=terminal, flush=True)
+                os._exit(0)
+            except Exception:
+                os._exit(3)
+        transcript = b''
+        def until(marker):
+            nonlocal transcript
+            deadline = time.monotonic() + 8
+            while marker not in transcript and time.monotonic() < deadline:
+                if select.select([fd], [], [], .1)[0]:
+                    try:
+                        transcript += os.read(fd, 16384)
+                    except OSError:
+                        break
+            self.assertIn(marker, transcript)
+        try:
+            until(b'1/4 CONFIGURATION:')
+            os.write(fd, json.dumps(config()).encode() + b'\n')
+            until(b'core.key: ')
+            os.write(fd, b'fixture-interactive-private-key\n')
+            until(b'Type INSTALL to continue')
+            os.write(fd, b'INSTALL\n')
+            until(b'Press Enter to return')
+            os.write(fd, b'\n')
+            until(b'FULL_FLOW_OK')
+            self.assertIn(b'100%', transcript)
+            self.assertNotIn(b'fixture-interactive-private-key', transcript)
+            _, status = os.waitpid(pid, 0)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+            pid = None
+        finally:
+            os.close(fd)
+            if pid:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+
     def test_actual_terminal_accepts_json_and_hides_the_key(self):
         pid, fd = pty.fork()
         if pid == 0:
