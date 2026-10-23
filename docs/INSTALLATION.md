@@ -21,7 +21,7 @@ to GitHub and the panel; no inbound customer ports are opened by this installer.
    The same pinned, checksum-verified command is:
 
 ```sh
-(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/63c8ca07b6117ff4f2389555d7c8e6046baa3f3e/install.sh -o "$work/install.sh" && printf 'b015a56cad331ea4c7b5f87b72105514220e0e85f19750d2caf1edf2f8b44bb0  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
+(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/4ed731c0d72ab820a52891c25a3d8a651c9de4e6/install.sh -o "$work/install.sh" && printf 'aa611b5732c5dc69b31af8f0b9ca39185bba2f9b0135a8135793747715a4bbee  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
 ```
 
 The wizard opens a full-screen NahaN terminal interface with a five-stage rail,
@@ -71,6 +71,43 @@ cannot retrieve a previously issued key from its hash. Preserve it privately;
 do not rotate a live core's key just to retrieve an installation package.
 
 ### Troubleshooting without bypassing safety
+
+#### Core active, updater registration rejected
+
+The error `registered binary must belong to exactly one running service` may
+come from older signed cores counting the `update register` command itself as
+a second core when invoked through `/opt/nahan/NahaN`. It does not prove that
+two systemd core services are running. The native installer now registers using
+a root-private temporary copy of the exact installed binary, without replacing
+the core or bypassing the exclusivity check. New source also excludes the
+registrar's own PID. Extra running core processes are still rejected.
+
+Do **not** reinstall, delete `/opt/nahan`, rotate the key or stop a healthy core.
+In the panel installation guide, expand troubleshooting and copy **Repair
+updater command**. It verifies the current pinned installer and runs it with
+`--repair-updater`; this mode reads the existing installation, never asks for
+a new config/key, and does not restart the core. It may start/restart the
+dedicated updater service. It refuses unsafe ownership/permissions or an
+existing conflicting updater registration.
+
+Alternatively, as **root**, repair an already installed legacy core locally:
+
+```sh
+(
+  set -eu
+  work="$(mktemp -d)"
+  trap 'rm -rf -- "$work"' EXIT
+  install -m 700 /opt/nahan/NahaN "$work/NahaN"
+  "$work/NahaN" update register --service nahan.service
+)
+```
+
+This copies only the existing executable, not the configuration or connection
+key. The private copy is deleted on exit. Success prints `Registered ...;
+existing core was not restarted.` If it still fails, preserve the running core
+and share only the safe error; a real duplicate process, conflicting profile or
+another safety check needs investigation. Do not repeat the old direct
+registration command from an obsolete installer warning.
 
 | Result | Action |
 | --- | --- |
