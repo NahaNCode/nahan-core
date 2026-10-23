@@ -1,5 +1,80 @@
 # Installation
 
+## Quick interactive installation (new server)
+
+This path installs a **fresh native Linux/systemd core**, not Docker and not the
+host agent. Linux x86_64 and ARM64 are supported. Debian/Ubuntu dependencies are
+installed when needed; on another distribution install curl, CA certificates,
+Python 3, OpenSSL with Ed25519 support and useradd first. Run with root or sudo
+access and an interactive SSH terminal. The server needs outbound HTTPS access
+to GitHub and the panel; no inbound customer ports are opened by this installer.
+
+1. In the panel, register the new core. Keep the installation package page open.
+2. Copy **Install command** from that page and run it in the server's SSH terminal.
+   The same pinned, checksum-verified command is:
+
+```sh
+(run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }; { command -v curl >/dev/null || { command -v apt-get >/dev/null && run_root apt-get update -qq && run_root apt-get install -y --no-install-recommends curl ca-certificates; }; } && work="$(mktemp -d)" && trap 'rm -rf -- "$work"' EXIT && curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 60 https://raw.githubusercontent.com/NahaNCode/nahan-core/92e92c2c5fb8311da3a8b3925e5896c40db4944b/install.sh -o "$work/install.sh" && printf '444cd3d7b55667b92bab52fdfeb197ae1c7b70c6b0a6c07611cb3cf34e9eb92f  %s\n' "$work/install.sh" | sha256sum --check --status && run_root bash "$work/install.sh")
+```
+
+3. At `CONFIGURATION`, click **Copy settings** in the panel, paste into the
+   terminal and press Enter. Both compact and multi-line `config.json` work.
+   Do not type a command or upload a file. `/cancel` stops configuration entry.
+4. At `KEY`, click **Copy connection key**, paste and press Enter. The secret
+   is intentionally invisible while pasting. This is not a failed paste.
+   The key is not included in arguments, command history or installer logs.
+5. The installer verifies the signed release catalog, detects the architecture
+   and displays the core UUID, version, directory and service. Type `INSTALL`
+   to confirm, or anything else to cancel. The downloaded binary's signed size
+   and SHA256 are checked before it can execute.
+6. After `INSTALLED`, return to the panel and click **Check core report**.
+   A running service alone is not a successful panel connection: require a fresh
+   heartbeat and matching desired/applied revisions. The new record remains LAB.
+
+The installer creates `/opt/nahan/NahaN`, private files in
+`/opt/nahan/runtime/` and `nahan.service`. The dedicated non-login `nahan` user
+runs the engine, not root. Only the low-port binding capability is granted.
+It enables startup after reboot and registers the existing signed updater.
+If updater registration fails, the installed core stays running and the exact
+registration command is printed. It does **not** install the host agent, create
+tunnels/listeners, change firewall rules, move services or promote LAB to production.
+Native service startup failure rolls back only this fresh installation.
+
+Existing `/opt/nahan` or `nahan.service` installations are refused without
+overwriting them. Use the existing upgrade/recovery flow below instead. Do not
+delete a running installation to make this installer proceed.
+
+### Clipboard and recovery
+
+The package page copies settings and the key separately. Downloads remain an
+optional backup, not the installation workflow. A browser without clipboard
+permission offers a select-and-copy fallback. The key is available only in the
+issuance screen's memory; refreshing or closing it loses that copy. The panel
+cannot retrieve a previously issued key from its hash. Preserve it privately;
+do not rotate a live core's key just to retrieve an installation package.
+
+### Troubleshooting without bypassing safety
+
+| Result | Action |
+| --- | --- |
+| Missing terminal | Download the script, then execute it from SSH; do not pipe it into bash. |
+| Unsupported architecture/systemd | Use Linux x86_64/ARM64 with systemd, or the separately documented container workflow. |
+| Catalog expired / TLS failure | Check `timedatectl`, CA certificates and outbound HTTPS. Never disable signature or TLS checks. |
+| Download/checksum failure | Check GitHub access, free disk space and network, then retry the same pinned command. No binary is installed on verification failure. |
+| Existing installation | Use `sudo nahan-core update` for a registered native installation. |
+| Service running, no panel report | Check the two commands below, panel reachability, the issued key and TLS `ServerName`. Keep issued identity fields unchanged. |
+
+```sh
+sudo systemctl status nahan.service
+sudo journalctl -u nahan.service -n 40 --no-pager
+```
+
+Never share `core.key` or unredacted service logs. After connection, publish and
+test a listener separately before sending customer traffic. Host-agent enrollment
+and tunnel creation remain separate panel workflows with separate keys.
+
+## Manual installation / custom staging
+
 Use a separate staging installation. Do not overwrite existing core directories,
 units, ports, firewall rules or tunnel interfaces. Build using the README's
 patched-modfile commands; the Dockerfile uses the same pinned patching.

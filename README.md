@@ -1,5 +1,16 @@
 # NahaN Core
 
+## New server: install from the panel
+
+Register the core in the panel, keep its package page open and copy **Install
+command** into the server's SSH terminal. The interactive installer asks for
+**config.json**, then the hidden **core.key**, and finally `INSTALL` confirmation.
+No file upload or build from source is required. It verifies the signed release,
+installs a dedicated systemd service and refuses to overwrite an existing core.
+Use [the complete copy/paste command and troubleshooting guide](docs/INSTALLATION.md#quick-interactive-installation-new-server).
+After installation, check the real core report in the panel before publishing a
+listener. This is a fresh native core installer, not a host-agent or tunnel installer.
+
 ## Verified Native Updates
 
 For an existing, dedicated systemd installation, register the updater once as
