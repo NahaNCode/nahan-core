@@ -314,6 +314,7 @@ WantedBy=multi-user.target
     print('\n4/4 INSTALLED: nahan.service is active and starts after reboot.', file=tty)
     print('Updater registered.' if result.returncode == 0 else 'Core is running, but updater registration needs review: sudo /opt/nahan/NahaN update register --service nahan.service', file=tty)
     print('Return to the panel and click Check core report. Expect a fresh heartbeat and matching desired/applied revisions.\nNo customer listener or tunnel has been created. The core remains LAB until panel validation.\nDiagnostics: sudo systemctl status nahan.service\nLogs: sudo journalctl -u nahan.service -n 40 --no-pager\nNever share core.key or unredacted logs.', file=tty, flush=True)
+    return result.returncode == 0
 
 def main():
     require(os.geteuid() == 0, 'Run as root.')
@@ -328,8 +329,10 @@ def main():
     with open('/dev/tty', 'r', encoding='utf-8') as reader, open('/dev/tty', 'w', encoding='utf-8', buffering=1) as writer:
         tty = Terminal(reader, writer)
         with InstallerScreen(tty, plain='--plain' in sys.argv) as screen:
-            interactive_install(tty, screen, arch)
+            registered = interactive_install(tty, screen, arch)
     print('NahaN INSTALLED | nahan.service active | /opt/nahan\nReturn to the panel and check the fresh core report. LAB is not production readiness.\nDiagnostics: systemctl status nahan.service\nPrivate local logs: journalctl -u nahan.service -n 40 --no-pager')
+    if not registered:
+        print('WARNING: core is running but updater registration failed. Retry: sudo /opt/nahan/NahaN update register --service nahan.service')
 
 def interactive_install(tty, screen, arch):
         screen.page(1, 'Connect this server to your panel', [
@@ -393,22 +396,24 @@ def interactive_install(tty, screen, arch):
                 'Creating private runtime and starting nahan.service.',
                 'On startup failure, only this fresh installation is rolled back.'])
             stage('service-installation')
-            install(binary, config, key, tty)
+            registered = install(binary, config, key, tty)
             screen.page(5, 'INSTALLED / return to the panel', [
                 'nahan.service is active and configured to start after reboot.',
+                'Updater registered.' if registered else 'WARNING: updater registration failed. Core remains running. Retry: sudo /opt/nahan/NahaN update register --service nahan.service',
                 'Click Check core report in the panel. Require a fresh heartbeat and matching revisions.',
                 'This core remains LAB. Test a real listener before using customer traffic.',
                 'systemctl status nahan.service',
                 'journalctl -u nahan.service -n 40 --no-pager (private local logs)',
                 'Press Enter to return to your shell.'])
             tty.readline()
+            return registered
 
 if __name__ == '__main__':
     try:
         main()
     except (KeyboardInterrupt, EOFError):
-        print('\nInstallation canceled.', file=sys.stderr)
-        sys.exit(1)
+        print('\nInstallation already complete. Service remains running; check the panel report.' if STAGE == 'complete' else '\nInstallation canceled.', file=sys.stderr)
+        sys.exit(0 if STAGE == 'complete' else 1)
     except Exception as error:
         print('NahaN installation stopped [' + STAGE + ']: ' + explain_error(error), file=sys.stderr)
         sys.exit(1)

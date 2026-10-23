@@ -81,7 +81,7 @@ class NativeInstallerTest(unittest.TestCase):
                     return len(data)
                 with open('/dev/tty', 'r') as reader, open('/dev/tty', 'w', buffering=1) as writer, \
                      patch.object(m, 'fetch', fetch), patch.object(m, 'verify_catalog', return_value=release), \
-                     patch.object(m, 'install') as install:
+                     patch.object(m, 'install', return_value=False) as install:
                     terminal = m.Terminal(reader, writer)
                     with m.InstallerScreen(terminal) as screen:
                         m.interactive_install(terminal, screen, 'amd64')
@@ -113,6 +113,7 @@ class NativeInstallerTest(unittest.TestCase):
             os.write(fd, b'\n')
             until(b'FULL_FLOW_OK')
             self.assertIn(b'100%', transcript)
+            self.assertIn(b'WARNING: updater registration failed', transcript)
             self.assertNotIn(b'fixture-interactive-private-key', transcript)
             _, status = os.waitpid(pid, 0)
             self.assertEqual(os.waitstatus_to_exitcode(status), 0)
