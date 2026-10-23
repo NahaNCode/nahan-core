@@ -9,3 +9,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: sh deploy/check-public-boundary.sh
       - run: node deploy/check-public-secrets.mjs
+      - run: python3 deploy/test-native-installer.py
